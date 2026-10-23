@@ -17,10 +17,11 @@
       <img src="/assets/tedx-white.png" alt="TEDxNITKSurathkal" width="248" height="80">
     </a>
     <div class="header-actions">
-      <button class="button button-quiet" data-open-leaderboard type="button">Leaderboard</button>
+      <button class="button button-quiet help-button" data-open-help type="button" aria-label="How to play"><span class="help-icon" aria-hidden="true">?</span><span class="help-label">How to play</span></button>
+      <button class="button button-quiet header-board" data-open-leaderboard type="button">Leaderboard</button>
       <div id="playerMenu" class="player-menu" hidden>
         <span id="headerUsername"></span>
-        <button id="signOut" class="text-button" type="button">Switch player</button>
+        <button id="signOut" class="text-button" type="button">Switch<span class="wide-only"> player</span></button>
       </div>
     </div>
   </header>
@@ -39,17 +40,21 @@
         <div class="entry-copy">
           <p class="step-label">Step in</p>
           <h2 id="entryTitle">Who's playing?</h2>
-          <p>Your email stays private — we only use it to contact prize winners. Your username is what appears on the leaderboard. Returning? Use the same email and username to pick up where you left off.</p>
+          <p>Your username appears on the leaderboard. Returning? Use the same email and username to pick up where you left off.</p>
         </div>
         <form id="entryForm" class="entry-form" novalidate>
           <label for="email">Email</label>
           <input id="email" name="email" type="email" autocomplete="email" inputmode="email" maxlength="320" placeholder="you@example.com" required>
+          <p class="field-help">Private — only used to contact prize winners.</p>
           <label for="username">Username</label>
           <input id="username" name="username" autocomplete="nickname" minlength="3" maxlength="24" pattern="[A-Za-z0-9_]+" placeholder="quiet_signal" required>
-          <p class="field-help">3–24 letters, numbers, or underscores. Shown publicly.</p>
+          <p class="field-help">3–24 letters, numbers or _ · shown publicly.</p>
           <button id="entrySubmit" class="button button-primary" type="submit">Start playing <span aria-hidden="true">→</span></button>
           <p id="entryError" class="form-error" role="alert"></p>
-          <button class="text-button entry-board-link" data-open-leaderboard type="button">View the leaderboard</button>
+          <div class="entry-links">
+            <button class="text-button" data-open-help type="button">How to play</button>
+            <button class="text-button" data-open-leaderboard type="button">View the leaderboard</button>
+          </div>
         </form>
       </section>
 
@@ -60,18 +65,20 @@
             <button class="difficulty-button" data-difficulty="medium" type="button"><span>02</span> Medium</button>
             <button class="difficulty-button" data-difficulty="hard" type="button"><span>03</span> Hard</button>
           </div>
+          <div class="stats" aria-live="polite">
+            <div><span>Moves</span><strong id="moves">0</strong></div>
+            <div><span>Pairs</span><strong id="pairs">0 / 8</strong></div>
+            <div id="timerCard"><span>Time</span><strong id="time">5:00</strong></div>
+          </div>
           <div class="toolbar-actions">
             <button class="button button-quiet mobile-only" data-open-leaderboard type="button">Leaderboard</button>
             <button id="newGame" class="button button-primary" type="button">New game</button>
           </div>
         </div>
 
-        <div class="stats" aria-live="polite">
-          <div><span>Moves</span><strong id="moves">0</strong></div>
-          <div><span>Pairs</span><strong id="pairs">0 / 8</strong></div>
-          <div id="timerCard"><span>Time</span><strong id="time">5:00</strong></div>
+        <div id="boardWrap" class="board-wrap">
+          <div id="board" class="board" aria-label="Memory cards"></div>
         </div>
-        <div id="board" class="board" aria-label="Memory cards"></div>
         <p id="gameMessage" class="game-message" role="status">Choose a level to begin.</p>
       </section>
     </section>
@@ -93,6 +100,25 @@
         <button role="tab" data-leader-difficulty="hard" type="button">Hard · Prize</button>
       </div>
       <div id="leaderboard" class="leaderboard" aria-live="polite"></div>
+    </section>
+  </div>
+
+  <div id="helpDialog" class="dialog-backdrop" hidden>
+    <section class="dialog help-dialog" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+      <button class="dialog-close" data-close-dialog type="button" aria-label="Close how to play">×</button>
+      <p class="step-label">How to play</p>
+      <h2 id="helpTitle">Find the <em>signal.</em></h2>
+      <ol class="help-steps">
+        <li><strong>Flip two cards.</strong> Tap any two cards to turn them over. If the symbols match, they stay open. If not, they flip back — remember where they were.</li>
+        <li><strong>Clear the board in 5:00.</strong> Find every pair before the timer runs out. The clock keeps running even while this window is open.</li>
+        <li><strong>Climb three levels.</strong> Easy (8 pairs) unlocks Medium (10 pairs), which unlocks Hard (15 pairs). Finish Hard to reveal this year's theme.</li>
+        <li><strong>Score.</strong> Every two cards you flip is one move. Fewest moves wins; time breaks ties. Only your best run on each level counts, so replay as often as you like.</li>
+        <li><strong>Win.</strong> The top Hard players win prizes — we'll contact them by email. To continue later, enter the same email and username.</li>
+      </ol>
+      <div class="dialog-actions">
+        <button class="button button-primary" data-close-dialog type="button">Got it</button>
+      </div>
+      <p class="fine-print">This independent TEDx event is operated under license from TED.</p>
     </section>
   </div>
 

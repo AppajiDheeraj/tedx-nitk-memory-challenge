@@ -58,6 +58,7 @@ function boot() {
     stopTimer();
     $('entryPanel').hidden = false;
     $('gameShell').hidden = true;
+    document.body.classList.remove('is-playing');
     $('playerMenu').hidden = true;
     $('entryError').textContent = message;
   }
@@ -67,7 +68,9 @@ function boot() {
     $('entryPanel').hidden = true;
     $('gameShell').hidden = false;
     $('playerMenu').hidden = false;
+    document.body.classList.add('is-playing');
     updateDifficultyButtons();
+    fitBoard();
   }
 
   async function loadSession() {
@@ -97,6 +100,20 @@ function boot() {
     $('gameMessage').className = `game-message ${kind}`;
   }
 
+  // Size the board so every card fits in the space left on screen.
+  function fitBoard() {
+    const current = state.game;
+    const board = $('board');
+    if (!current || $('gameShell').hidden) return;
+    const wrap = $('boardWrap');
+    const gap = parseFloat(getComputedStyle(board).columnGap) || 8;
+    const cell = Math.max(28, Math.min(
+      (wrap.clientWidth - gap * (current.columns - 1)) / current.columns,
+      (wrap.clientHeight - gap * (current.rows - 1)) / current.rows
+    ));
+    board.style.width = `${Math.floor(cell * current.columns + gap * (current.columns - 1))}px`;
+  }
+
   function renderGame() {
     const current = state.game;
     if (!current) {
@@ -109,6 +126,7 @@ function boot() {
     $('timerCard').classList.toggle('is-urgent', state.seconds <= 30 && current.status === 'in_progress');
     const board = $('board');
     board.style.gridTemplateColumns = `repeat(${current.columns}, minmax(0, 1fr))`;
+    fitBoard();
     board.replaceChildren(...current.cards.map((card) => {
       const visible = card.revealed || card.matched;
       const button = document.createElement('button');
@@ -318,6 +336,8 @@ function boot() {
   $('newGame').addEventListener('click', () => startGame(state.difficulty));
   document.querySelectorAll('[data-difficulty]').forEach((button) => button.addEventListener('click', () => startGame(button.dataset.difficulty)));
   document.querySelectorAll('[data-open-leaderboard]').forEach((button) => button.addEventListener('click', () => { openDialog($('leaderboardDialog')); loadLeaderboard('hard'); }));
+  document.querySelectorAll('[data-open-help]').forEach((button) => button.addEventListener('click', () => openDialog($('helpDialog'))));
+  window.addEventListener('resize', fitBoard);
   document.querySelectorAll('[data-leader-difficulty]').forEach((button) => button.addEventListener('click', () => loadLeaderboard(button.dataset.leaderDifficulty)));
   document.querySelectorAll('[data-close-dialog]').forEach((button) => button.addEventListener('click', closeDialog));
   document.querySelectorAll('.dialog-backdrop').forEach((backdrop) => backdrop.addEventListener('click', (event) => { if (event.target === backdrop) closeDialog(); }));
