@@ -1,0 +1,11 @@
+DROP TABLE IF EXISTS sessions;
+DROP INDEX IF EXISTS players_username_lower_key;
+DROP INDEX IF EXISTS players_google_subject_key;
+ALTER TABLE games ALTER COLUMN player_id DROP NOT NULL;
+ALTER TABLE players DROP COLUMN IF EXISTS updated_at;
+ALTER TABLE players DROP COLUMN IF EXISTS picture_url;
+ALTER TABLE players DROP COLUMN IF EXISTS email_verified;
+ALTER TABLE players DROP COLUMN IF EXISTS email;
+ALTER TABLE players DROP COLUMN IF EXISTS google_subject;
+ALTER TABLE players RENAME COLUMN username TO name;
+ALTER TABLE players ALTER COLUMN name SET NOT NULL;

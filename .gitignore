@@ -1,0 +1,6 @@
+.worktrees/
+bin/
+.env
+.DS_Store
+coverage.out
+

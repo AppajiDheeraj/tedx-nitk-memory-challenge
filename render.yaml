@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: tedx-nitk-memory-challenge
+    runtime: go
+    plan: free
+    autoDeploy: true
+    buildCommand: go build -trimpath -ldflags="-s -w" -o bin/server .
+    startCommand: ./bin/server
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: BASE_URL
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: COOKIE_SECURE
+        value: "true"
