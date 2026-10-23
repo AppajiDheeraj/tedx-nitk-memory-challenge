@@ -9,23 +9,26 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/mail"
 	"regexp"
 	"strings"
 	"time"
 
-	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/gin-gonic/gin"
 	"github.com/lib/pq"
-	"golang.org/x/oauth2"
 )
 
-const SessionCookieName = "tedx_session"
+const (
+	SessionCookieName = "tedx_session"
+	SessionDuration   = 30 * 24 * time.Hour
+)
 
 var (
 	ErrUnauthenticated = errors.New("authentication required")
-	ErrUnverifiedEmail = errors.New("a verified Google email is required")
+	ErrInvalidEmail    = errors.New("enter a valid email address")
 	ErrInvalidUsername = errors.New("username must be 3-24 letters, numbers, or underscores")
-	ErrUsernameTaken   = errors.New("username is already taken")
+	ErrUsernameTaken   = errors.New("that username is already taken — pick another")
+	ErrEmailInUse      = errors.New("this email already plays under a different username — use that username to continue")
 	usernamePattern    = regexp.MustCompile(`^[A-Za-z0-9_]{3,24}$`)
 )
 
@@ -36,133 +39,104 @@ type Progress struct {
 }
 
 type Player struct {
-	ID         int64    `json:"id"`
-	Username   string   `json:"username"`
-	PictureURL string   `json:"picture_url,omitempty"`
-	Progress   Progress `json:"progress"`
-}
-
-type Claims struct {
-	Subject       string `json:"sub"`
-	Email         string `json:"email"`
-	EmailVerified bool   `json:"email_verified"`
-	Picture       string `json:"picture"`
-}
-
-type Verifier interface {
-	Verify(context.Context, string) (Claims, error)
-}
-
-type GoogleVerifier struct {
-	verifier *oidc.IDTokenVerifier
-}
-
-func NewGoogleVerifier(ctx context.Context, clientID string) *GoogleVerifier {
-	keys := oidc.NewRemoteKeySet(ctx, "https://www.googleapis.com/oauth2/v3/certs")
-	return &GoogleVerifier{verifier: oidc.NewVerifier("https://accounts.google.com", keys, &oidc.Config{ClientID: clientID})}
-}
-
-func (v *GoogleVerifier) Verify(ctx context.Context, raw string) (Claims, error) {
-	token, err := v.verifier.Verify(ctx, raw)
-	if err != nil {
-		return Claims{}, fmt.Errorf("verifying Google ID token: %w", err)
-	}
-	var claims Claims
-	if err := token.Claims(&claims); err != nil {
-		return Claims{}, fmt.Errorf("reading Google claims: %w", err)
-	}
-	return claims, nil
-}
-
-type Login struct {
-	URL      string
-	State    string
-	Verifier string
+	ID       int64    `json:"id"`
+	Username string   `json:"username"`
+	Progress Progress `json:"progress"`
 }
 
 type Service struct {
-	db       *sql.DB
-	oauth    oauth2.Config
-	verifier Verifier
-	now      func() time.Time
+	db  *sql.DB
+	now func() time.Time
 }
 
-func NewService(db *sql.DB, config oauth2.Config, verifier Verifier, baseURL string, _ bool) *Service {
-	config.RedirectURL = strings.TrimRight(baseURL, "/") + "/auth/google/callback"
-	return &Service{db: db, oauth: config, verifier: verifier, now: time.Now}
+func NewService(db *sql.DB) *Service {
+	return &Service{db: db, now: time.Now}
 }
 
 func ValidUsername(username string) bool {
 	return usernamePattern.MatchString(username)
 }
 
-func (s *Service) BeginLogin() (Login, error) {
-	state, err := randomToken(24)
-	if err != nil {
-		return Login{}, err
+// NormalizeEmail returns the lower-cased address, or ErrInvalidEmail.
+func NormalizeEmail(raw string) (string, error) {
+	email := strings.ToLower(strings.TrimSpace(raw))
+	if email == "" || len(email) > 320 {
+		return "", ErrInvalidEmail
 	}
-	verifier := oauth2.GenerateVerifier()
-	return Login{
-		URL:      s.oauth.AuthCodeURL(state, oauth2.S256ChallengeOption(verifier)),
-		State:    state,
-		Verifier: verifier,
-	}, nil
+	parsed, err := mail.ParseAddress(email)
+	if err != nil || parsed.Address != email || !strings.Contains(email[strings.LastIndex(email, "@"):], ".") {
+		return "", ErrInvalidEmail
+	}
+	return email, nil
 }
 
-func (s *Service) CompleteLogin(ctx context.Context, code, pkceVerifier string) (Player, string, error) {
-	token, err := s.oauth.Exchange(ctx, code, oauth2.VerifierOption(pkceVerifier))
-	if err != nil {
-		return Player{}, "", fmt.Errorf("exchanging Google authorization code: %w", err)
-	}
-	rawIDToken, ok := token.Extra("id_token").(string)
-	if !ok || rawIDToken == "" {
-		return Player{}, "", errors.New("Google response did not include an ID token")
-	}
-	claims, err := s.verifier.Verify(ctx, rawIDToken)
+// Enter signs a player in by email and public username. A new email creates a
+// player; a returning email must use the username it first registered with.
+func (s *Service) Enter(ctx context.Context, rawEmail, username string) (Player, string, error) {
+	email, err := NormalizeEmail(rawEmail)
 	if err != nil {
 		return Player{}, "", err
 	}
-	player, err := s.upsertGooglePlayer(ctx, claims)
-	if err != nil {
-		return Player{}, "", err
+	username = strings.TrimSpace(username)
+	if !ValidUsername(username) {
+		return Player{}, "", ErrInvalidUsername
 	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Player{}, "", fmt.Errorf("beginning entry: %w", err)
+	}
+	defer tx.Rollback()
+
+	var player Player
+	var existing sql.NullString
+	err = tx.QueryRowContext(ctx,
+		`SELECT id, username FROM players WHERE LOWER(email) = $1 FOR UPDATE`, email,
+	).Scan(&player.ID, &existing)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		err = tx.QueryRowContext(ctx,
+			`INSERT INTO players (username, email, email_verified) VALUES ($1, $2, FALSE) RETURNING id, username`,
+			username, email,
+		).Scan(&player.ID, &player.Username)
+	case err != nil:
+		return Player{}, "", fmt.Errorf("finding player: %w", err)
+	case !existing.Valid:
+		err = tx.QueryRowContext(ctx,
+			`UPDATE players SET username = $1, updated_at = NOW() WHERE id = $2 RETURNING username`,
+			username, player.ID,
+		).Scan(&player.Username)
+	case !strings.EqualFold(existing.String, username):
+		return Player{}, "", ErrEmailInUse
+	default:
+		player.Username = existing.String
+	}
+	var pqErr *pq.Error
+	if errors.As(err, &pqErr) && pqErr.Code == "23505" {
+		if strings.Contains(pqErr.Constraint, "email") {
+			return Player{}, "", ErrEmailInUse
+		}
+		return Player{}, "", ErrUsernameTaken
+	}
+	if err != nil {
+		return Player{}, "", fmt.Errorf("saving player: %w", err)
+	}
+
 	sessionToken, err := randomToken(32)
 	if err != nil {
 		return Player{}, "", err
 	}
-	if _, err := s.db.ExecContext(ctx,
+	if _, err := tx.ExecContext(ctx,
 		`INSERT INTO sessions (token_hash, player_id, expires_at) VALUES ($1, $2, $3)`,
-		hashToken(sessionToken), player.ID, s.now().Add(7*24*time.Hour),
+		hashToken(sessionToken), player.ID, s.now().Add(SessionDuration),
 	); err != nil {
 		return Player{}, "", fmt.Errorf("creating session: %w", err)
 	}
-	return player, sessionToken, nil
-}
-
-func (s *Service) upsertGooglePlayer(ctx context.Context, claims Claims) (Player, error) {
-	if claims.Subject == "" || claims.Email == "" || !claims.EmailVerified {
-		return Player{}, ErrUnverifiedEmail
+	if err := tx.Commit(); err != nil {
+		return Player{}, "", fmt.Errorf("committing entry: %w", err)
 	}
-	var player Player
-	var username, picture sql.NullString
-	err := s.db.QueryRowContext(ctx,
-		`INSERT INTO players (google_subject, email, email_verified, picture_url)
-		 VALUES ($1, $2, $3, $4)
-		 ON CONFLICT (google_subject) WHERE google_subject IS NOT NULL DO UPDATE SET
-		   email = EXCLUDED.email,
-		   email_verified = EXCLUDED.email_verified,
-		   picture_url = EXCLUDED.picture_url,
-		   updated_at = NOW()
-		 RETURNING id, username, picture_url`,
-		claims.Subject, claims.Email, claims.EmailVerified, claims.Picture,
-	).Scan(&player.ID, &username, &picture)
-	if err != nil {
-		return Player{}, fmt.Errorf("saving Google player: %w", err)
-	}
-	player.Username = username.String
-	player.PictureURL = picture.String
 	player.Progress.Easy = true
-	return player, nil
+	return player, sessionToken, nil
 }
 
 func (s *Service) CurrentPlayer(ctx context.Context, token string) (Player, error) {
@@ -170,47 +144,27 @@ func (s *Service) CurrentPlayer(ctx context.Context, token string) (Player, erro
 		return Player{}, ErrUnauthenticated
 	}
 	var player Player
-	var username, picture sql.NullString
+	var username sql.NullString
 	err := s.db.QueryRowContext(ctx,
-		`SELECT p.id, p.username, p.picture_url,
+		`SELECT p.id, p.username,
 		 EXISTS (SELECT 1 FROM games g WHERE g.player_id = p.id AND g.difficulty = 'easy' AND g.status = 'completed'),
 		 EXISTS (SELECT 1 FROM games g WHERE g.player_id = p.id AND g.difficulty = 'medium' AND g.status = 'completed')
 		 FROM sessions s JOIN players p ON p.id = s.player_id
 		 WHERE s.token_hash = $1 AND s.expires_at > NOW()`,
 		hashToken(token),
-	).Scan(&player.ID, &username, &picture, &player.Progress.Medium, &player.Progress.Hard)
+	).Scan(&player.ID, &username, &player.Progress.Medium, &player.Progress.Hard)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Player{}, ErrUnauthenticated
 	}
 	if err != nil {
 		return Player{}, fmt.Errorf("loading session: %w", err)
 	}
+	if !username.Valid {
+		return Player{}, ErrUnauthenticated
+	}
 	player.Username = username.String
-	player.PictureURL = picture.String
 	player.Progress.Easy = true
 	return player, nil
-}
-
-func (s *Service) SetUsername(ctx context.Context, playerID int64, username string) error {
-	if !ValidUsername(username) {
-		return ErrInvalidUsername
-	}
-	var saved string
-	err := s.db.QueryRowContext(ctx,
-		`UPDATE players SET username = $1, updated_at = NOW() WHERE id = $2 RETURNING username`,
-		username, playerID,
-	).Scan(&saved)
-	var pqErr *pq.Error
-	if errors.As(err, &pqErr) && pqErr.Code == "23505" {
-		return ErrUsernameTaken
-	}
-	if errors.Is(err, sql.ErrNoRows) {
-		return ErrUnauthenticated
-	}
-	if err != nil {
-		return fmt.Errorf("updating username: %w", err)
-	}
-	return nil
 }
 
 func (s *Service) Logout(ctx context.Context, token string) error {

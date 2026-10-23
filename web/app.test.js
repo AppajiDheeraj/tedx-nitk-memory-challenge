@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { formatTime, validUsername, canPlayDifficulty } = require('./app.js');
+const { formatTime, validUsername, validEmail, canPlayDifficulty } = require('./app.js');
 
 test('formatTime clamps invalid or negative values', () => {
   assert.equal(formatTime(65), '1:05');
@@ -22,4 +22,12 @@ test('canPlayDifficulty uses only server progress', () => {
   assert.equal(canPlayDifficulty(progress, 'medium'), true);
   assert.equal(canPlayDifficulty(progress, 'hard'), false);
   assert.equal(canPlayDifficulty({}, 'easy'), false);
+});
+
+test('validEmail accepts ordinary addresses only', () => {
+  assert.equal(validEmail('person@example.com'), true);
+  assert.equal(validEmail(' a.b+c@nitk.edu.in '), true);
+  assert.equal(validEmail('person@localhost'), false);
+  assert.equal(validEmail('no-at-sign'), false);
+  assert.equal(validEmail('two words@example.com'), false);
 });

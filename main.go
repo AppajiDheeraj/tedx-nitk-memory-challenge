@@ -15,8 +15,6 @@ import (
 	"memory-match/internal/store"
 
 	"github.com/gin-gonic/gin"
-	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/google"
 )
 
 func main() {
@@ -34,23 +32,12 @@ func main() {
 	gameService := game.NewService(db)
 	gameHandler := handlers.NewGameHandler(gameService)
 
-	baseURL := envOr("BASE_URL", "http://localhost:8082")
-	clientID := requireEnv("GOOGLE_CLIENT_ID")
-	clientSecret := requireEnv("GOOGLE_CLIENT_SECRET")
-	sessionSecret := requireEnv("SESSION_SECRET")
-	if len(sessionSecret) < 32 {
-		log.Fatal("SESSION_SECRET must be at least 32 characters")
-	}
-	secureCookies, err := strconv.ParseBool(envOr("COOKIE_SECURE", strconv.FormatBool(strings.HasPrefix(baseURL, "https://"))))
+	secureCookies, err := strconv.ParseBool(envOr("COOKIE_SECURE", strconv.FormatBool(os.Getenv("RENDER") != "")))
 	if err != nil {
 		log.Fatal("COOKIE_SECURE must be true or false")
 	}
-	oauthConfig := oauth2.Config{
-		ClientID: clientID, ClientSecret: clientSecret,
-		Endpoint: google.Endpoint, Scopes: []string{"openid", "email", "profile"},
-	}
-	authService := appauth.NewService(db, oauthConfig, appauth.NewGoogleVerifier(context.Background(), clientID), baseURL, secureCookies)
-	authHandler := handlers.NewAuthHandler(authService, []byte(sessionSecret), secureCookies)
+	authService := appauth.NewService(db)
+	authHandler := handlers.NewAuthHandler(authService, secureCookies)
 
 	router := gin.Default()
 	router.Use(func(c *gin.Context) {
@@ -78,11 +65,9 @@ func main() {
 	router.Static("/assets", "web/assets")
 	router.StaticFile("/styles.css", "web/styles.css")
 	router.StaticFile("/app.js", "web/app.js")
-	router.GET("/auth/google", handlers.NewRateLimitMiddleware(120, time.Minute), authHandler.BeginGoogle)
-	router.GET("/auth/google/callback", authHandler.GoogleCallback)
+	router.POST("/auth/enter", handlers.NewRateLimitMiddleware(30, time.Minute), authHandler.Enter)
 	router.POST("/auth/logout", authHandler.Logout)
 	router.GET("/me", authHandler.RequirePlayer(), authHandler.Me)
-	router.PUT("/me/username", authHandler.RequirePlayer(), authHandler.UpdateUsername)
 	gameLimit := handlers.NewRateLimitMiddleware(360, time.Minute)
 	protected := router.Group("")
 	protected.Use(authHandler.RequirePlayer(), gameLimit)
@@ -106,12 +91,4 @@ func envOr(name, fallback string) string {
 		return value
 	}
 	return fallback
-}
-
-func requireEnv(name string) string {
-	value := strings.TrimSpace(os.Getenv(name))
-	if value == "" {
-		log.Fatalf("%s environment variable is not set", name)
-	}
-	return value
 }

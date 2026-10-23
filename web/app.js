@@ -9,12 +9,16 @@ function validUsername(value) {
   return /^[A-Za-z0-9_]{3,24}$/.test(String(value || ''));
 }
 
+function validEmail(value) {
+  return /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(String(value || '').trim());
+}
+
 function canPlayDifficulty(progress, difficulty) {
   return Boolean(progress && progress[difficulty]);
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { formatTime, validUsername, canPlayDifficulty };
+  module.exports = { formatTime, validUsername, validEmail, canPlayDifficulty };
 }
 
 if (typeof window !== 'undefined') {
@@ -48,28 +52,31 @@ function boot() {
     return data;
   }
 
-  function showView(name) {
-    ['signedOutView', 'onboardingView', 'gameView'].forEach((id) => { $(id).hidden = id !== name; });
-    $('playerMenu').hidden = name === 'signedOutView';
+  function showEntry(message = '') {
+    state.me = null;
+    state.game = null;
+    stopTimer();
+    $('entryPanel').hidden = false;
+    $('gameShell').hidden = true;
+    $('playerMenu').hidden = true;
+    $('entryError').textContent = message;
+  }
+
+  function showGame() {
+    $('headerUsername').textContent = state.me.username;
+    $('entryPanel').hidden = true;
+    $('gameShell').hidden = false;
+    $('playerMenu').hidden = false;
+    updateDifficultyButtons();
   }
 
   async function loadSession() {
     try {
       state.me = await api('/me');
-      $('headerUsername').textContent = state.me.username || 'New player';
-      if (!state.me.username) {
-        showView('onboardingView');
-        $('username').focus();
-        return;
-      }
-      showView('gameView');
-      updateDifficultyButtons();
+      showGame();
+      if (!state.game) setMessage('Pick a level, or press New game to begin.');
     } catch (error) {
-      state.me = null;
-      stopTimer();
-      showView('signedOutView');
-      const failed = new URLSearchParams(location.search).get('auth') === 'failed';
-      $('authMessage').textContent = failed ? 'Google sign-in did not complete. Please try again.' : error.status === 401 ? '' : error.message;
+      showEntry(error.status === 401 ? '' : error.message);
     }
   }
 
@@ -132,7 +139,7 @@ function boot() {
       startTimer();
     } catch (error) {
       if (error.status === 401) await loadSession();
-      setMessage(error.message, 'is-error');
+      else setMessage(error.message, 'is-error');
     } finally {
       state.busy = false;
       $('newGame').disabled = false;
@@ -279,22 +286,35 @@ function boot() {
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
   }
 
-  $('usernameForm').addEventListener('submit', async (event) => {
+  $('entryForm').addEventListener('submit', async (event) => {
     event.preventDefault();
+    const email = $('email').value.trim();
     const username = $('username').value.trim();
-    $('usernameError').textContent = '';
-    if (!validUsername(username)) {
-      $('usernameError').textContent = 'Use 3–24 letters, numbers, or underscores.';
+    $('entryError').textContent = '';
+    if (!validEmail(email)) {
+      $('entryError').textContent = 'Enter a valid email address.';
+      $('email').focus();
       return;
     }
+    if (!validUsername(username)) {
+      $('entryError').textContent = 'Use 3–24 letters, numbers, or underscores for your username.';
+      $('username').focus();
+      return;
+    }
+    $('entrySubmit').disabled = true;
     try {
-      await api('/me/username', { method: 'PUT', body: JSON.stringify({ username }) });
+      state.me = await api('/auth/enter', { method: 'POST', body: JSON.stringify({ email, username }) });
       await loadSession();
+      const next = state.me && state.me.progress && state.me.progress.hard ? 'hard' : state.me && state.me.progress && state.me.progress.medium ? 'medium' : 'easy';
+      state.difficulty = next;
+      startGame(next);
     } catch (error) {
-      $('usernameError').textContent = error.message;
+      $('entryError').textContent = error.message;
+    } finally {
+      $('entrySubmit').disabled = false;
     }
   });
-  $('signOut').addEventListener('click', async () => { try { await api('/auth/logout', { method: 'POST', body: '{}' }); } finally { location.assign('/'); } });
+  $('signOut').addEventListener('click', async () => { try { await api('/auth/logout', { method: 'POST', body: '{}' }); } finally { showEntry(); $('email').focus(); } });
   $('newGame').addEventListener('click', () => startGame(state.difficulty));
   document.querySelectorAll('[data-difficulty]').forEach((button) => button.addEventListener('click', () => startGame(button.dataset.difficulty)));
   document.querySelectorAll('[data-open-leaderboard]').forEach((button) => button.addEventListener('click', () => { openDialog($('leaderboardDialog')); loadLeaderboard('hard'); }));

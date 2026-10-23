@@ -17,30 +17,27 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	return migrateFS(ctx, db, migrationfiles.Files)
 }
 
-func migrateFS(ctx context.Context, db *sql.DB, files fs.FS) (resultErr error) {
-	conn, err := db.Conn(ctx)
+// migrateFS applies pending migrations in one transaction guarded by a
+// transaction-scoped advisory lock, so it also works through Neon's pooler.
+func migrateFS(ctx context.Context, db *sql.DB, files fs.FS) error {
+	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("acquiring migration connection: %w", err)
+		return fmt.Errorf("beginning migrations: %w", err)
 	}
-	defer conn.Close()
+	defer tx.Rollback()
 
-	if _, err := conn.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, migrationLockID); err != nil {
+		return fmt.Errorf("locking migrations: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (
 		version TEXT PRIMARY KEY,
 		applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 	)`); err != nil {
 		return fmt.Errorf("creating migration table: %w", err)
 	}
-	if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_lock($1)`, migrationLockID); err != nil {
-		return fmt.Errorf("locking migrations: %w", err)
-	}
-	defer func() {
-		if _, err := conn.ExecContext(context.Background(), `SELECT pg_advisory_unlock($1)`, migrationLockID); resultErr == nil && err != nil {
-			resultErr = fmt.Errorf("unlocking migrations: %w", err)
-		}
-	}()
 
 	applied := make(map[string]bool)
-	rows, err := conn.QueryContext(ctx, `SELECT version FROM schema_migrations`)
+	rows, err := tx.QueryContext(ctx, `SELECT version FROM schema_migrations`)
 	if err != nil {
 		return fmt.Errorf("reading applied migrations: %w", err)
 	}
@@ -72,21 +69,15 @@ func migrateFS(ctx context.Context, db *sql.DB, files fs.FS) (resultErr error) {
 		if err != nil {
 			return fmt.Errorf("reading migration %s: %w", name, err)
 		}
-		tx, err := conn.BeginTx(ctx, nil)
-		if err != nil {
-			return fmt.Errorf("beginning migration %s: %w", name, err)
-		}
 		if _, err := tx.ExecContext(ctx, string(body)); err != nil {
-			tx.Rollback()
 			return fmt.Errorf("applying migration %s: %w", name, err)
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO schema_migrations (version) VALUES ($1)`, name); err != nil {
-			tx.Rollback()
 			return fmt.Errorf("recording migration %s: %w", name, err)
 		}
-		if err := tx.Commit(); err != nil {
-			return fmt.Errorf("committing migration %s: %w", name, err)
-		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("committing migrations: %w", err)
 	}
 	return nil
 }

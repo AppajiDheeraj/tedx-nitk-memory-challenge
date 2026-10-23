@@ -48,53 +48,112 @@ func TestSessionLookupRejectsUnknownOrExpiredToken(t *testing.T) {
 	}
 }
 
-func TestSetUsernameMapsCaseInsensitiveConflict(t *testing.T) {
+func TestNormalizeEmail(t *testing.T) {
+	tests := []struct {
+		in, want string
+		ok       bool
+	}{
+		{"  Person@Example.com ", "person@example.com", true},
+		{"a@b.in", "a@b.in", true},
+		{"not-an-email", "", false},
+		{"Name <a@b.com>", "", false},
+		{"a@localhost", "", false},
+		{"", "", false},
+	}
+	for _, tt := range tests {
+		got, err := NormalizeEmail(tt.in)
+		if (err == nil) != tt.ok || got != tt.want {
+			t.Errorf("NormalizeEmail(%q) = %q, %v; want %q ok=%v", tt.in, got, err, tt.want, tt.ok)
+		}
+	}
+}
+
+func TestEnterCreatesNewPlayerAndSession(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer db.Close()
 
-	mock.ExpectQuery("UPDATE players").WithArgs("Signal", int64(9)).WillReturnError(&pq.Error{Code: "23505"})
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT id, username FROM players").WithArgs("person@example.com").WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery("INSERT INTO players").WithArgs("signal_7", "person@example.com").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "username"}).AddRow(4, "signal_7"))
+	mock.ExpectExec("INSERT INTO sessions").WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
 	service := &Service{db: db, now: time.Now}
-	err = service.SetUsername(context.Background(), 9, "Signal")
+	player, token, err := service.Enter(context.Background(), "Person@Example.com", "signal_7")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if player.ID != 4 || player.Username != "signal_7" || token == "" || !player.Progress.Easy {
+		t.Fatalf("player = %+v token = %q", player, token)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestEnterReturningEmailRequiresSameUsername(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT id, username FROM players").WithArgs("person@example.com").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "username"}).AddRow(4, "signal_7"))
+	mock.ExpectRollback()
+	service := &Service{db: db, now: time.Now}
+	_, _, err = service.Enter(context.Background(), "person@example.com", "someone_else")
+	if !errors.Is(err, ErrEmailInUse) {
+		t.Fatalf("Enter() error = %v, want ErrEmailInUse", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestEnterReturningEmailIgnoresUsernameCase(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT id, username FROM players").WithArgs("person@example.com").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "username"}).AddRow(4, "Signal_7"))
+	mock.ExpectExec("INSERT INTO sessions").WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+	service := &Service{db: db, now: time.Now}
+	player, _, err := service.Enter(context.Background(), "person@example.com", "signal_7")
+	if err != nil || player.Username != "Signal_7" {
+		t.Fatalf("Enter() = %+v, %v", player, err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestEnterMapsUsernameConflict(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT id, username FROM players").WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery("INSERT INTO players").WillReturnError(&pq.Error{Code: "23505", Constraint: "players_username_lower_key"})
+	mock.ExpectRollback()
+	service := &Service{db: db, now: time.Now}
+	_, _, err = service.Enter(context.Background(), "new@example.com", "Signal")
 	if !errors.Is(err, ErrUsernameTaken) {
-		t.Fatalf("SetUsername() error = %v, want ErrUsernameTaken", err)
+		t.Fatalf("Enter() error = %v, want ErrUsernameTaken", err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)
-	}
-}
-
-func TestGoogleClaimsPersistPrivateIdentityButReturnPublicPlayer(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-
-	mock.ExpectQuery("INSERT INTO players").
-		WithArgs("google-subject", "person@example.com", true, "https://example.com/p.png").
-		WillReturnRows(sqlmock.NewRows([]string{"id", "username", "picture_url"}).AddRow(4, nil, "https://example.com/p.png"))
-	service := &Service{db: db, now: time.Now}
-	player, err := service.upsertGooglePlayer(context.Background(), Claims{
-		Subject: "google-subject", Email: "person@example.com", EmailVerified: true, Picture: "https://example.com/p.png",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if player.ID != 4 || player.Username != "" || player.PictureURL != "https://example.com/p.png" {
-		t.Fatalf("public player = %+v", player)
-	}
-	if err := mock.ExpectationsWereMet(); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestGoogleClaimsRequireVerifiedEmail(t *testing.T) {
-	service := &Service{now: time.Now}
-	_, err := service.upsertGooglePlayer(context.Background(), Claims{Subject: "sub", Email: "person@example.com"})
-	if !errors.Is(err, ErrUnverifiedEmail) {
-		t.Fatalf("upsertGooglePlayer() error = %v, want ErrUnverifiedEmail", err)
 	}
 }

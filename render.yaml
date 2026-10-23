@@ -8,15 +8,8 @@ services:
     startCommand: ./bin/server
     healthCheckPath: /health
     envVars:
+      # The only required setting: the Neon connection string.
       - key: DATABASE_URL
         sync: false
-      - key: BASE_URL
-        sync: false
-      - key: GOOGLE_CLIENT_ID
-        sync: false
-      - key: GOOGLE_CLIENT_SECRET
-        sync: false
-      - key: SESSION_SECRET
-        generateValue: true
-      - key: COOKIE_SECURE
-        value: "true"
+      - key: GIN_MODE
+        value: release

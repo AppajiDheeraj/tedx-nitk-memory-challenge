@@ -20,62 +20,50 @@
       <button class="button button-quiet" data-open-leaderboard type="button">Leaderboard</button>
       <div id="playerMenu" class="player-menu" hidden>
         <span id="headerUsername"></span>
-        <button id="signOut" class="text-button" type="button">Sign out</button>
+        <button id="signOut" class="text-button" type="button">Switch player</button>
       </div>
     </div>
   </header>
 
   <main id="main">
-    <section id="signedOutView" class="landing view" aria-labelledby="landingTitle">
-      <div class="landing-copy">
-        <p class="eyebrow">TEDxNITKSurathkal · Interactive challenge</p>
-        <h1 id="landingTitle">Find what<br><em>stays with you.</em></h1>
-        <p class="lede">A memory game about attention. Match every signal, move through three levels, and uncover what has been waiting beneath the noise.</p>
-        <div class="landing-actions">
-          <a class="button button-primary" href="/auth/google">Continue with Google <span aria-hidden="true">↗</span></a>
-          <button class="button button-quiet" data-open-leaderboard type="button">View the board</button>
-        </div>
-        <p id="authMessage" class="status-note" role="status"></p>
-      </div>
-      <div class="signal-orbit" aria-hidden="true">
-        <div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><span>?</span>
-      </div>
-    </section>
-
-    <section id="onboardingView" class="onboarding view" hidden aria-labelledby="usernameTitle">
-      <div class="onboarding-card">
-        <p class="step-label">One last detail</p>
-        <h1 id="usernameTitle">Choose your public name.</h1>
-        <p>Your email stays private. Only this username appears on the leaderboard.</p>
-        <form id="usernameForm" novalidate>
-          <label for="username">Username</label>
-          <div class="field-row">
-            <input id="username" name="username" autocomplete="username" minlength="3" maxlength="24" pattern="[A-Za-z0-9_]+" placeholder="quiet_signal" required>
-            <button class="button button-primary" type="submit">Enter the game</button>
-          </div>
-          <p class="field-help">3–24 letters, numbers, or underscores.</p>
-          <p id="usernameError" class="form-error" role="alert"></p>
-        </form>
-      </div>
-    </section>
-
-    <section id="gameView" class="game-view view" hidden aria-labelledby="gameTitle">
+    <section id="gameView" class="game-view view" aria-labelledby="gameTitle">
       <div class="game-intro">
         <div>
           <p class="eyebrow">A small experiment in attention</p>
           <h1 id="gameTitle">Remember the <em>signal.</em></h1>
         </div>
-        <p>Turn over two cards. Hold the pattern. Find every pair before five minutes disappear.</p>
+        <p>Turn over two cards. Hold the pattern. Find every pair before five minutes disappear. Clear Easy, Medium and Hard to uncover this year's theme.</p>
       </div>
 
-      <section class="game-shell" aria-label="Memory game">
+      <section id="entryPanel" class="game-shell entry-panel" aria-labelledby="entryTitle">
+        <div class="entry-copy">
+          <p class="step-label">Step in</p>
+          <h2 id="entryTitle">Who's playing?</h2>
+          <p>Your email stays private — we only use it to contact prize winners. Your username is what appears on the leaderboard. Returning? Use the same email and username to pick up where you left off.</p>
+        </div>
+        <form id="entryForm" class="entry-form" novalidate>
+          <label for="email">Email</label>
+          <input id="email" name="email" type="email" autocomplete="email" inputmode="email" maxlength="320" placeholder="you@example.com" required>
+          <label for="username">Username</label>
+          <input id="username" name="username" autocomplete="nickname" minlength="3" maxlength="24" pattern="[A-Za-z0-9_]+" placeholder="quiet_signal" required>
+          <p class="field-help">3–24 letters, numbers, or underscores. Shown publicly.</p>
+          <button id="entrySubmit" class="button button-primary" type="submit">Start playing <span aria-hidden="true">→</span></button>
+          <p id="entryError" class="form-error" role="alert"></p>
+          <button class="text-button entry-board-link" data-open-leaderboard type="button">View the leaderboard</button>
+        </form>
+      </section>
+
+      <section id="gameShell" class="game-shell" aria-label="Memory game" hidden>
         <div class="game-toolbar">
           <div id="difficulty" class="difficulty" role="group" aria-label="Difficulty">
             <button class="difficulty-button" data-difficulty="easy" type="button"><span>01</span> Easy</button>
             <button class="difficulty-button" data-difficulty="medium" type="button"><span>02</span> Medium</button>
             <button class="difficulty-button" data-difficulty="hard" type="button"><span>03</span> Hard</button>
           </div>
-          <button id="newGame" class="button button-primary" type="button">New game</button>
+          <div class="toolbar-actions">
+            <button class="button button-quiet mobile-only" data-open-leaderboard type="button">Leaderboard</button>
+            <button id="newGame" class="button button-primary" type="button">New game</button>
+          </div>
         </div>
 
         <div class="stats" aria-live="polite">

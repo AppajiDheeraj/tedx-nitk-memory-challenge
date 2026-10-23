@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	appauth "memory-match/internal/auth"
 
@@ -16,27 +15,24 @@ import (
 
 type fakeAuthService struct {
 	player appauth.Player
+	err    error
 }
 
-func TestAuthCallbackKeepsNewSessionCookie(t *testing.T) {
+func TestEnterSetsHttpOnlySessionCookie(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	handler := NewAuthHandler(&fakeAuthService{}, []byte("01234567890123456789012345678901"), false)
-	loginValue, err := handler.signLoginCookie("expected-state", "pkce-verifier", time.Now().Add(time.Minute))
-	if err != nil {
-		t.Fatal(err)
-	}
+	handler := NewAuthHandler(&fakeAuthService{player: appauth.Player{ID: 3, Username: "signal_7"}}, false)
 	router := gin.New()
-	router.GET("/auth/google/callback", handler.GoogleCallback)
-	req := httptest.NewRequest(http.MethodGet, "/auth/google/callback?state=expected-state&code=valid-code", nil)
-	req.AddCookie(&http.Cookie{Name: loginCookieName, Value: loginValue})
+	router.POST("/auth/enter", handler.Enter)
+	req := httptest.NewRequest(http.MethodPost, "/auth/enter", strings.NewReader(`{"email":"a@b.com","username":"signal_7"}`))
+	req.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, req)
 
-	if response.Code != http.StatusFound {
-		t.Fatalf("status = %d, want 302", response.Code)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", response.Code, response.Body.String())
 	}
-	if response.Header().Get("Clear-Site-Data") != "" {
-		t.Fatalf("callback clears the newly created session: %q", response.Header().Get("Clear-Site-Data"))
+	if strings.Contains(response.Body.String(), "a@b.com") {
+		t.Fatalf("response leaked email: %s", response.Body.String())
 	}
 	foundSession := false
 	for _, cookie := range response.Result().Cookies() {
@@ -45,26 +41,40 @@ func TestAuthCallbackKeepsNewSessionCookie(t *testing.T) {
 		}
 	}
 	if !foundSession {
-		t.Fatal("callback did not set an HttpOnly session cookie")
+		t.Fatal("enter did not set an HttpOnly session cookie")
 	}
 }
 
-func (f *fakeAuthService) BeginLogin() (appauth.Login, error) { return appauth.Login{}, nil }
-func (f *fakeAuthService) CompleteLogin(context.Context, string, string) (appauth.Player, string, error) {
+func TestEnterMapsConflictTo409(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := NewAuthHandler(&fakeAuthService{err: appauth.ErrUsernameTaken}, false)
+	router := gin.New()
+	router.POST("/auth/enter", handler.Enter)
+	req := httptest.NewRequest(http.MethodPost, "/auth/enter", strings.NewReader(`{"email":"a@b.com","username":"taken"}`))
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, req)
+	if response.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409", response.Code)
+	}
+}
+
+func (f *fakeAuthService) Enter(context.Context, string, string) (appauth.Player, string, error) {
+	if f.err != nil {
+		return appauth.Player{}, "", f.err
+	}
 	return f.player, "token", nil
 }
 func (f *fakeAuthService) CurrentPlayer(context.Context, string) (appauth.Player, error) {
 	return f.player, nil
 }
-func (f *fakeAuthService) SetUsername(context.Context, int64, string) error { return nil }
-func (f *fakeAuthService) Logout(context.Context, string) error             { return nil }
+func (f *fakeAuthService) Logout(context.Context, string) error { return nil }
 
 func TestAuthMeResponseDoesNotExposePrivateIdentity(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	handler := NewAuthHandler(&fakeAuthService{player: appauth.Player{
-		ID: 7, Username: "signal_7", PictureURL: "https://example.com/p.png",
+		ID: 7, Username: "signal_7",
 		Progress: appauth.Progress{Easy: true, Medium: true},
-	}}, []byte("01234567890123456789012345678901"), false)
+	}}, false)
 	router := gin.New()
 	router.GET("/me", handler.RequirePlayer(), handler.Me)
 
@@ -90,7 +100,7 @@ func TestAuthMeResponseDoesNotExposePrivateIdentity(t *testing.T) {
 
 func TestAuthMiddlewareRejectsMissingSession(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	handler := NewAuthHandler(&fakeAuthService{}, []byte("01234567890123456789012345678901"), false)
+	handler := NewAuthHandler(&fakeAuthService{}, false)
 	router := gin.New()
 	router.GET("/me", handler.RequirePlayer(), handler.Me)
 	response := httptest.NewRecorder()

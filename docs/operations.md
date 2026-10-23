@@ -5,11 +5,10 @@ This runbook is for the TEDxNITKSurathkal organizer operating the free Render an
 ## Before the event
 
 1. Confirm the Render deployment is green and the Neon project is active.
-2. Confirm `BASE_URL` exactly matches the public `https://…onrender.com` URL.
-3. Confirm the Google OAuth web client has the exact `/auth/google/callback` redirect URI.
-4. Sign in with a normal Google account, set a username, and complete a test game.
-5. Check Easy, Medium, and Hard leaderboard tabs on both a phone and a laptop.
-6. Wake the service 15 minutes before play, then run:
+2. Confirm `DATABASE_URL` is set on the Render service.
+3. Open the site, enter a test email and username, and complete a test game.
+4. Check Easy, Medium, and Hard leaderboard tabs on both a phone and a laptop.
+5. Wake the service 15 minutes before play, then run:
 
 ```sh
 node scripts/load-smoke.js https://your-service.onrender.com
@@ -21,20 +20,16 @@ A passing check has zero failed requests and public-route p95 below five seconds
 
 | Variable | Expected value |
 | --- | --- |
-| `DATABASE_URL` | Neon pooled PostgreSQL URL with TLS required |
-| `BASE_URL` | Exact public Render origin, no trailing slash |
-| `GOOGLE_CLIENT_ID` | Google OAuth web client ID |
-| `GOOGLE_CLIENT_SECRET` | Matching Google OAuth client secret |
-| `SESSION_SECRET` | Render-generated random value |
-| `COOKIE_SECURE` | `true` |
+| `DATABASE_URL` | Neon PostgreSQL connection string (`sslmode=require`) |
+| `COOKIE_SECURE` | Optional; defaults to `true` on Render |
 
 Never paste secret values into issues, chat, screenshots, or the repository.
 
 ## During play
 
 - Keep the Render logs and Neon monitoring pages open.
-- If sign-in fails for everyone, check the Google redirect URI and Render environment variables before changing code.
-- If the first request is slow, wait for the service to wake and retry; do not ask players to create duplicate usernames.
+- If nobody can start a game, check the Render logs and that `DATABASE_URL` is set and the Neon project is active.
+- If the first request is slow, wait for the service to wake and retry; players who return use the same email and username to resume.
 - If the database is unavailable, pause the contest. Scores are deliberately not accepted offline because they could not be verified.
 - Do not change ranking rules after play begins.
 
@@ -73,7 +68,7 @@ The first two or three rows are the prize candidates. Contact them using the pri
 - For an application regression, use Render's deploy history to redeploy the last known-good commit. Database migrations in this release are additive and remain compatible with that release line.
 - Before manual database work, export the winner query and the affected rows.
 - Never delete players or games during the event. If a result needs investigation, record its game ID and preserve it.
-- If a secret is exposed, rotate it in its source system, update Render, and redeploy. Invalidating `SESSION_SECRET` signs everyone out.
+- If the database password is exposed, reset it in Neon, update `DATABASE_URL` in Render, and redeploy.
 
 ## After the event
 
