@@ -41,9 +41,7 @@ func TestCreateGameExpiresPriorAttemptBeforeInsert(t *testing.T) {
 	mock.ExpectExec("UPDATE games SET status = 'expired'").WithArgs(int64(8)).WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectQuery("INSERT INTO games").WithArgs(int64(8), "easy", 4, 4, 8).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "started_at"}).AddRow(3, started))
-	for i := 0; i < 16; i++ {
-		mock.ExpectExec("INSERT INTO game_cards").WillReturnResult(sqlmock.NewResult(int64(i+1), 1))
-	}
+	mock.ExpectExec("INSERT INTO game_cards").WillReturnResult(sqlmock.NewResult(0, 16))
 	mock.ExpectCommit()
 
 	game, err := NewService(db).CreateGame(8, "easy")
@@ -80,8 +78,8 @@ func TestFlipCardLocksOnlyOwnedGame(t *testing.T) {
 	}
 	defer db.Close()
 	mock.ExpectBegin()
-	mock.ExpectQuery("FROM games WHERE id = \\$1 AND player_id = \\$2 FOR UPDATE").
-		WithArgs(int64(12), int64(7)).WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery("FROM games g JOIN game_cards c .* WHERE g.id = \\$1 AND g.player_id = \\$2").
+		WithArgs(int64(12), int64(7)).WillReturnRows(sqlmock.NewRows([]string{"status"}))
 	mock.ExpectRollback()
 
 	_, err = NewService(db).FlipCard(7, 12, 0)

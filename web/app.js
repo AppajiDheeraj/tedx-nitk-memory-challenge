@@ -32,7 +32,7 @@ function boot() {
     watermelon: '◎', cherry: '◈', kiwi: '◑', mango: '✺', pineapple: '◇',
     pear: '◌', peach: '⌂', lemon: '✶', blueberry: '◍', coconut: '△'
   };
-  const state = { me: null, game: null, difficulty: 'easy', busy: false, seconds: 300, timer: null, syncTicks: 0, openDialog: null, previousFocus: null };
+  const state = { me: null, game: null, difficulty: 'easy', busy: false, seconds: 300, deadline: 0, timer: null, first: -1, shown: [], pairs: new Set(), hideTimer: null, queue: Promise.resolve(), cardEls: [], openDialog: null, previousFocus: null };
 
   async function api(path, options = {}) {
     let response;
@@ -114,32 +114,62 @@ function boot() {
     board.style.width = `${Math.floor(cell * current.columns + gap * (current.columns - 1))}px`;
   }
 
-  function renderGame() {
+  // The board is built once per game; flips only toggle classes so the
+  // browser animates transforms instead of rebuilding the DOM.
+  function buildBoard() {
     const current = state.game;
-    if (!current) {
-      $('board').replaceChildren();
-      return;
-    }
-    $('moves').textContent = String(current.moves);
-    $('pairs').textContent = `${current.pairs_found} / ${current.total_pairs}`;
-    $('time').textContent = formatTime(state.seconds);
-    $('timerCard').classList.toggle('is-urgent', state.seconds <= 30 && current.status === 'in_progress');
     const board = $('board');
     board.style.gridTemplateColumns = `repeat(${current.columns}, minmax(0, 1fr))`;
-    fitBoard();
-    board.replaceChildren(...current.cards.map((card) => {
-      const visible = card.revealed || card.matched;
+    state.cardEls = current.cards.map((card) => {
       const button = document.createElement('button');
       button.type = 'button';
-      button.className = `memory-card ${card.matched ? 'is-matched' : visible ? 'is-visible' : ''}`;
-      button.disabled = state.busy || current.status !== 'in_progress' || visible;
-      button.setAttribute('aria-label', card.matched ? `Matched ${symbols[card.value] || card.value}` : visible ? `Revealed ${symbols[card.value] || card.value}` : `Hidden card ${card.position + 1}`);
-      const face = document.createElement('span');
-      face.textContent = visible ? (symbols[card.value] || '●') : '·';
-      button.append(face);
-      button.addEventListener('click', () => flipCard(card.position));
+      button.className = 'memory-card';
+      button.dataset.position = String(card.position);
+      button.innerHTML = '<span class="card-inner"><span class="card-face card-back" aria-hidden="true"></span><span class="card-face card-front" aria-hidden="true"></span></span>';
       return button;
-    }));
+    });
+    board.replaceChildren(...state.cardEls);
+    state.cardEls.forEach((_, position) => paintCard(position));
+    fitBoard();
+  }
+
+  function paintCard(position) {
+    const card = state.game.cards[position];
+    const el = state.cardEls[position];
+    if (!card || !el) return;
+    const symbol = symbols[card.value] || '';
+    el.classList.toggle('is-flipped', card.revealed || card.matched);
+    el.classList.toggle('is-matched', card.matched);
+    el.classList.toggle('is-loading', card.revealed && !card.value);
+    el.querySelector('.card-front').textContent = symbol;
+    el.setAttribute('aria-label', card.matched ? `Matched ${symbol}` : card.revealed ? (card.value ? `Revealed ${symbol}` : 'Turning card') : `Hidden card ${position + 1}`);
+  }
+
+  function paintStats() {
+    const current = state.game;
+    if (!current) return;
+    $('moves').textContent = String(current.moves);
+    $('pairs').textContent = `${current.pairs_found} / ${current.total_pairs}`;
+    paintTime();
+  }
+
+  function paintTime() {
+    $('time').textContent = formatTime(state.seconds);
+    $('timerCard').classList.toggle('is-urgent', state.seconds <= 30 && Boolean(state.game) && state.game.status === 'in_progress');
+  }
+
+  function loadGame(data) {
+    state.game = { ...data, cards: data.cards.map((card) => ({ position: card.position, value: card.value || '', revealed: card.revealed, matched: card.matched })) };
+    const open = state.game.cards.filter((card) => card.revealed && !card.matched).map((card) => card.position);
+    clearTimeout(state.hideTimer);
+    state.hideTimer = null;
+    state.pairs = new Set();
+    state.first = open.length === 1 ? open[0] : -1;
+    state.shown = open.length === 2 ? open : [];
+    if (state.shown.length) state.hideTimer = setTimeout(closeShown, 400);
+    setDeadline(data.time_left_seconds);
+    buildBoard();
+    paintStats();
   }
 
   async function startGame(difficulty = state.difficulty) {
@@ -151,8 +181,7 @@ function boot() {
     $('newGame').disabled = true;
     setMessage('Shuffling the signal…');
     try {
-      state.game = await api('/games', { method: 'POST', body: JSON.stringify({ difficulty }) });
-      state.seconds = state.game.time_left_seconds;
+      loadGame(await api('/games', { method: 'POST', body: JSON.stringify({ difficulty }) }));
       setMessage('Choose two cards. Remember what you see.');
       startTimer();
     } catch (error) {
@@ -162,62 +191,144 @@ function boot() {
       state.busy = false;
       $('newGame').disabled = false;
       updateDifficultyButtons();
-      renderGame();
     }
   }
 
-  async function refreshGame() {
+  // Re-read the authoritative board after an error or when the tab returns.
+  async function resync() {
     if (!state.game) return;
-    state.game = await api(`/games/${state.game.id}`);
-    state.seconds = state.game.time_left_seconds;
-    renderGame();
-    if (state.game.status === 'completed') await completeLevel();
-    if (state.game.status === 'expired') {
+    const id = state.game.id;
+    const data = await api(`/games/${id}`);
+    if (!state.game || state.game.id !== id) return;
+    loadGame(data);
+    if (data.status === 'in_progress') startTimer();
+    else if (data.status === 'completed') await completeLevel();
+    else showExpired();
+  }
+
+  function showExpired() {
+    stopTimer();
+    if (state.game) state.game.status = 'expired';
+    state.seconds = 0;
+    paintTime();
+    setMessage('Time slipped away. Press New game and listen closer.', 'is-error');
+  }
+
+  // Flip a shown mismatch back, optionally keeping one card open.
+  function closeShown(keep = -1) {
+    clearTimeout(state.hideTimer);
+    state.hideTimer = null;
+    state.shown.forEach((position) => {
+      if (position === keep) return;
+      state.game.cards[position].revealed = false;
+      paintCard(position);
+    });
+    state.shown = [];
+  }
+
+  // Taps are never dropped: the card turns at once and its request joins an
+  // ordered queue. The server applies flips in the same order, hiding a
+  // mismatched pair itself when the next card arrives.
+  function onBoardClick(event) {
+    const el = event.target.closest('.memory-card');
+    const current = state.game;
+    if (!el || !current || current.status !== 'in_progress' || state.busy) return;
+    const position = Number(el.dataset.position);
+    const card = current.cards[position];
+    if (!card || card.matched) return;
+    let pair = null;
+    if (state.shown.includes(position)) {
+      // Tapping a card of the shown mismatch keeps it open as a new first card.
+      closeShown(position);
+      state.first = position;
+    } else {
+      if (card.revealed) return;
+      closeShown();
+      state.pairs.forEach((pending) => { pending.movedOn = true; });
+      card.revealed = true;
+      paintCard(position);
+      if (state.first === -1) {
+        state.first = position;
+      } else {
+        pair = { a: state.first, b: position, movedOn: false };
+        state.pairs.add(pair);
+        state.first = -1;
+      }
+    }
+    const gameId = current.id;
+    state.queue = state.queue.then(() => sendFlip(gameId, position, pair));
+  }
+
+  async function sendFlip(gameId, position, pair) {
+    let result;
+    try {
+      result = await api(`/games/${gameId}/flip`, { method: 'POST', body: JSON.stringify({ position }) });
+    } catch (error) {
+      if (!state.game || state.game.id !== gameId) return;
+      if (error.status === 401) return loadSession();
+      if (/expired/.test(error.message)) return showExpired();
+      setMessage(error.message, 'is-error');
+      try { await resync(); } catch (_) { /* the next tap retries */ }
+      return;
+    }
+    const current = state.game;
+    if (!current || current.id !== gameId) return;
+    const card = current.cards[position];
+    card.value = result.value;
+    current.moves = result.moves;
+    current.pairs_found = result.pairs_found;
+    current.status = result.status;
+    if (result.status === 'in_progress') setDeadline(result.time_left_seconds);
+    paintCard(position);
+    if (pair) state.pairs.delete(pair);
+    if (result.result === 'match') {
+      const other = current.cards[result.related_position];
+      other.matched = card.matched = true;
+      paintCard(position);
+      paintCard(other.position);
+      setMessage(result.status === 'completed' ? 'Signal complete.' : 'A clear match.', 'is-success');
+    } else if (result.result === 'mismatch') {
+      const both = [result.related_position, position];
+      if (pair && pair.movedOn) {
+        both.forEach((p) => { current.cards[p].revealed = false; paintCard(p); });
+      } else {
+        state.shown = both;
+        state.hideTimer = setTimeout(closeShown, 800);
+        setMessage('Hold that pattern…');
+      }
+    } else if (!state.pairs.size) {
+      setMessage('Now find its pair.');
+    }
+    paintStats();
+    if (result.status === 'completed') {
       stopTimer();
-      setMessage('Time slipped away. Start a new game and listen closer.', 'is-error');
+      state.seconds = result.time_left_seconds;
+      paintTime();
+      setTimeout(completeLevel, 550);
     }
   }
 
-  async function flipCard(position) {
-    if (!state.game || state.busy || state.game.status !== 'in_progress') return;
-    state.busy = true;
-    renderGame();
-    try {
-      const result = await api(`/games/${state.game.id}/flip`, { method: 'POST', body: JSON.stringify({ position }) });
-      await refreshGame();
-      if (result.result === 'mismatch' && state.game.status === 'in_progress') {
-        setMessage('Hold that pattern…');
-        await new Promise((resolve) => setTimeout(resolve, 720));
-        await api(`/games/${state.game.id}/resolve`, { method: 'POST', body: '{}' });
-        await refreshGame();
-      } else if (result.result === 'match') {
-        setMessage(state.game.status === 'completed' ? 'Signal complete.' : 'A clear match.', 'is-success');
-      }
-    } catch (error) {
-      if (error.status === 401) await loadSession();
-      else {
-        setMessage(error.message, 'is-error');
-        try { await refreshGame(); } catch (_) { /* next action retries */ }
-      }
-    } finally {
-      state.busy = false;
-      renderGame();
-    }
+  // The countdown runs against a fixed deadline, so it never drifts; every
+  // flip response re-anchors it to the server clock.
+  function setDeadline(secondsLeft) {
+    state.deadline = Date.now() + Math.max(0, secondsLeft) * 1000;
+    state.seconds = Math.max(0, secondsLeft);
   }
 
   function startTimer() {
     stopTimer();
-    state.syncTicks = 0;
-    state.timer = setInterval(async () => {
+    state.timer = setInterval(() => {
       if (!state.game || state.game.status !== 'in_progress') return stopTimer();
-      state.seconds = Math.max(0, state.seconds - 1);
-      state.syncTicks++;
-      $('time').textContent = formatTime(state.seconds);
-      $('timerCard').classList.toggle('is-urgent', state.seconds <= 30);
-      if (state.seconds === 0 || state.syncTicks % 15 === 0) {
-        try { await refreshGame(); } catch (_) { /* local countdown continues */ }
+      const seconds = Math.max(0, Math.ceil((state.deadline - Date.now()) / 1000));
+      if (seconds !== state.seconds) {
+        state.seconds = seconds;
+        paintTime();
       }
-    }, 1000);
+      if (seconds === 0) {
+        stopTimer();
+        state.queue = state.queue.then(() => resync().catch(showExpired));
+      }
+    }, 250);
   }
 
   function stopTimer() {
@@ -338,6 +449,12 @@ function boot() {
   document.querySelectorAll('[data-open-leaderboard]').forEach((button) => button.addEventListener('click', () => { openDialog($('leaderboardDialog')); loadLeaderboard('hard'); }));
   document.querySelectorAll('[data-open-help]').forEach((button) => button.addEventListener('click', () => openDialog($('helpDialog'))));
   window.addEventListener('resize', fitBoard);
+  $('board').addEventListener('click', onBoardClick);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && state.game && state.game.status === 'in_progress') {
+      state.queue = state.queue.then(() => resync().catch(() => {}));
+    }
+  });
   document.querySelectorAll('[data-leader-difficulty]').forEach((button) => button.addEventListener('click', () => loadLeaderboard(button.dataset.leaderDifficulty)));
   document.querySelectorAll('[data-close-dialog]').forEach((button) => button.addEventListener('click', closeDialog));
   document.querySelectorAll('.dialog-backdrop').forEach((backdrop) => backdrop.addEventListener('click', (event) => { if (event.target === backdrop) closeDialog(); }));

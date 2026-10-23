@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strconv"
 	"time"
+
+	"github.com/lib/pq"
 )
 
 const TimeLimitSeconds = 300
@@ -74,14 +76,19 @@ func (s *Service) CreateGame(playerID int64, difficulty string) (*Game, error) {
 		return nil, fmt.Errorf("creating game: %w", err)
 	}
 
-	for _, card := range cards {
-		_, err := tx.Exec(
-			`INSERT INTO game_cards (game_id, position, pair_id, value) VALUES ($1, $2, $3, $4)`,
-			gameID, card.Position, card.PairID, card.Value,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("saving card: %w", err)
-		}
+	positions := make([]int64, len(cards))
+	pairIDs := make([]int64, len(cards))
+	values := make([]string, len(cards))
+	for i, card := range cards {
+		positions[i], pairIDs[i], values[i] = int64(card.Position), int64(card.PairID), card.Value
+	}
+	if _, err := tx.Exec(
+		`INSERT INTO game_cards (game_id, position, pair_id, value)
+		 SELECT $1, u.position, u.pair_id, u.value
+		 FROM unnest($2::int[], $3::int[], $4::text[]) AS u(position, pair_id, value)`,
+		gameID, pq.Array(positions), pq.Array(pairIDs), pq.Array(values),
+	); err != nil {
+		return nil, fmt.Errorf("saving cards: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("committing game: %w", err)
@@ -103,7 +110,6 @@ var (
 	ErrGameCompleted    = errors.New("game is already completed")
 	ErrGameExpired      = errors.New("game time has expired")
 	ErrCardUnavailable  = errors.New("card is already revealed or matched")
-	ErrMismatchPending  = errors.New("resolve the previous mismatch first")
 	ErrDifficultyLocked = errors.New("complete the previous difficulty first")
 )
 
@@ -212,6 +218,10 @@ type FlipResult struct {
 	ElapsedSeconds   int    `json:"elapsed_seconds"`
 }
 
+// FlipCard reveals one card. It reads the game and its cards in one query and
+// writes every change in one statement, so a flip costs four database round
+// trips. A mismatched pair still face up is hidden automatically, which lets
+// the client flip back locally instead of calling ResolveMismatch.
 func (s *Service) FlipCard(playerID, gameID int64, position int) (*FlipResult, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -219,18 +229,37 @@ func (s *Service) FlipCard(playerID, gameID int64, position int) (*FlipResult, e
 	}
 	defer tx.Rollback()
 
+	rows, err := tx.Query(
+		`SELECT g.status, g.moves, g.pairs_found, g.total_pairs, g.started_at, NOW(),
+		        c.position, c.pair_id, c.value, c.is_matched, c.is_revealed
+		 FROM games g JOIN game_cards c ON c.game_id = g.id
+		 WHERE g.id = $1 AND g.player_id = $2
+		 ORDER BY c.position
+		 FOR UPDATE OF g`, gameID, playerID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("getting game: %w", err)
+	}
 	var status string
 	var moves, pairsFound, totalPairs int
 	var startedAt, dbNow time.Time
-	err = tx.QueryRow(
-		`SELECT status, moves, pairs_found, total_pairs, started_at, NOW()
-		 FROM games WHERE id = $1 AND player_id = $2 FOR UPDATE`, gameID, playerID,
-	).Scan(&status, &moves, &pairsFound, &totalPairs, &startedAt, &dbNow)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrGameNotFound
+	cards := make([]Card, 0, 30)
+	for rows.Next() {
+		var card Card
+		if err := rows.Scan(&status, &moves, &pairsFound, &totalPairs, &startedAt, &dbNow,
+			&card.Position, &card.PairID, &card.Value, &card.Matched, &card.Revealed); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("reading game: %w", err)
+		}
+		cards = append(cards, card)
 	}
-	if err != nil {
-		return nil, fmt.Errorf("getting game: %w", err)
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, fmt.Errorf("iterating game: %w", err)
+	}
+	rows.Close()
+	if len(cards) == 0 {
+		return nil, ErrGameNotFound
 	}
 	if status == "expired" {
 		return nil, ErrGameExpired
@@ -247,108 +276,84 @@ func (s *Service) FlipCard(playerID, gameID int64, position int) (*FlipResult, e
 		}
 		return nil, ErrGameExpired
 	}
-
-	var card Card
-	err = tx.QueryRow(
-		`SELECT position, pair_id, value, is_matched, is_revealed
-		 FROM game_cards WHERE game_id = $1 AND position = $2 FOR UPDATE`,
-		gameID, position,
-	).Scan(&card.Position, &card.PairID, &card.Value, &card.Matched, &card.Revealed)
-	if errors.Is(err, sql.ErrNoRows) {
+	if position < 0 || position >= len(cards) || cards[position].Position != position {
 		return nil, ErrCardNotFound
 	}
-	if err != nil {
-		return nil, fmt.Errorf("getting card: %w", err)
+	card := &cards[position]
+	changed := map[int]*Card{}
+	var open []*Card
+	for i := range cards {
+		if cards[i].Revealed && !cards[i].Matched {
+			open = append(open, &cards[i])
+		}
+	}
+	// The client flips a mismatched pair back on its own; hide it here first.
+	if len(open) >= 2 {
+		for _, previous := range open {
+			previous.Revealed = false
+			changed[previous.Position] = previous
+		}
+		open = nil
 	}
 	if card.Matched || card.Revealed {
 		return nil, ErrCardUnavailable
 	}
-
-	rows, err := tx.Query(
-		`SELECT position, pair_id, value FROM game_cards
-		 WHERE game_id = $1 AND is_revealed = TRUE AND is_matched = FALSE
-		 ORDER BY position FOR UPDATE`, gameID,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("getting revealed cards: %w", err)
-	}
-	revealedCards := make([]Card, 0, 2)
-	for rows.Next() {
-		var previous Card
-		if err := rows.Scan(&previous.Position, &previous.PairID, &previous.Value); err != nil {
-			rows.Close()
-			return nil, fmt.Errorf("reading revealed card: %w", err)
-		}
-		revealedCards = append(revealedCards, previous)
-	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
-		return nil, fmt.Errorf("iterating revealed cards: %w", err)
-	}
-	rows.Close()
-	if len(revealedCards) >= 2 {
-		return nil, ErrMismatchPending
-	}
-
-	if _, err := tx.Exec(
-		`UPDATE game_cards SET is_revealed = TRUE WHERE game_id = $1 AND position = $2`, gameID, position,
-	); err != nil {
-		return nil, fmt.Errorf("revealing card: %w", err)
-	}
+	changed[card.Position] = card
+	card.Revealed = true
 
 	left, elapsed := timerValues(startedAt, status, nil, dbNow)
 	result := &FlipResult{
 		GameID: strconv.FormatInt(gameID, 10), Position: card.Position, Value: card.Value,
-		Result: "first_card_revealed", Revealed: true, Moves: moves,
-		PairsFound: pairsFound, TotalPairs: totalPairs, Status: status,
-		TimeLimitSeconds: TimeLimitSeconds, TimeLeftSeconds: left, ElapsedSeconds: elapsed,
+		Result: "first_card_revealed", Revealed: true,
+		TotalPairs: totalPairs, TimeLimitSeconds: TimeLimitSeconds,
 	}
-	if len(revealedCards) == 0 {
-		if err := tx.Commit(); err != nil {
-			return nil, fmt.Errorf("committing flip: %w", err)
+	if len(open) == 1 {
+		previous := open[0]
+		result.RelatedPosition = &previous.Position
+		result.RelatedValue = previous.Value
+		moves++
+		if previous.PairID == card.PairID {
+			previous.Matched, card.Matched = true, true
+			changed[previous.Position] = previous
+			pairsFound++
+			result.Result = "match"
+			result.Matched = true
+			if pairsFound == totalPairs {
+				status = "completed"
+				// Transaction time matches the completed_at value written below.
+				left, elapsed = timerValues(startedAt, status, &dbNow, dbNow)
+			}
+		} else {
+			result.Result = "mismatch"
 		}
-		return result, nil
-	}
-
-	previous := revealedCards[0]
-	result.RelatedPosition = &previous.Position
-	result.RelatedValue = previous.Value
-	moves++
-	if previous.PairID == card.PairID {
-		if _, err := tx.Exec(
-			`UPDATE game_cards SET is_matched = TRUE, is_revealed = TRUE
-			 WHERE game_id = $1 AND position IN ($2, $3)`, gameID, previous.Position, card.Position,
-		); err != nil {
-			return nil, fmt.Errorf("marking pair matched: %w", err)
-		}
-		pairsFound++
-		result.Result = "match"
-		result.Matched = true
-		if pairsFound == totalPairs {
-			status = "completed"
-		}
-	} else {
-		result.Result = "mismatch"
 	}
 
-	_, err = tx.Exec(
-		`UPDATE games SET moves = $2, pairs_found = $3, status = $4,
-		 completed_at = CASE WHEN $5 = TRUE AND completed_at IS NULL THEN NOW() ELSE completed_at END
+	positions := make([]int64, 0, len(changed))
+	revealed := make([]bool, 0, len(changed))
+	matched := make([]bool, 0, len(changed))
+	for _, c := range changed {
+		positions = append(positions, int64(c.Position))
+		revealed = append(revealed, c.Revealed)
+		matched = append(matched, c.Matched)
+	}
+	if _, err := tx.Exec(
+		`WITH changed AS (
+		   UPDATE game_cards c SET is_revealed = u.revealed, is_matched = u.matched
+		   FROM unnest($2::int[], $3::bool[], $4::bool[]) AS u(position, revealed, matched)
+		   WHERE c.game_id = $1 AND c.position = u.position
+		 )
+		 UPDATE games SET moves = $5, pairs_found = $6, status = $7::text,
+		   completed_at = CASE WHEN $7::text = 'completed' AND completed_at IS NULL THEN NOW() ELSE completed_at END
 		 WHERE id = $1`,
-		gameID, moves, pairsFound, status, status == "completed",
-	)
-	if err != nil {
-		return nil, fmt.Errorf("updating game progress: %w", err)
-	}
-	result.Moves, result.PairsFound, result.Status = moves, pairsFound, status
-	if status == "completed" {
-		// Use transaction time, which matches the completed_at value above.
-		left, elapsed = timerValues(startedAt, status, &dbNow, dbNow)
-		result.TimeLeftSeconds, result.ElapsedSeconds = left, elapsed
+		gameID, pq.Array(positions), pq.Array(revealed), pq.Array(matched), moves, pairsFound, status,
+	); err != nil {
+		return nil, fmt.Errorf("saving flip: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("committing flip: %w", err)
 	}
+	result.Moves, result.PairsFound, result.Status = moves, pairsFound, status
+	result.TimeLeftSeconds, result.ElapsedSeconds = left, elapsed
 	return result, nil
 }
 

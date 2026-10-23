@@ -222,8 +222,7 @@ func (h *GameHandler) FlipCard(c *gin.Context) {
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error(), "status": "expired"})
 
 		case errors.Is(err, game.ErrGameCompleted),
-			errors.Is(err, game.ErrCardUnavailable),
-			errors.Is(err, game.ErrMismatchPending):
+			errors.Is(err, game.ErrCardUnavailable):
 			c.JSON(http.StatusConflict, gin.H{
 				"error": err.Error(),
 			})

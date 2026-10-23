@@ -22,6 +22,19 @@ func ConnectDB() (*sql.DB, error) {
 	connStr = strings.ReplaceAll(connStr, "channel_binding=require&", "")
 	connStr = strings.ReplaceAll(connStr, "?channel_binding=require", "")
 
+	// Send parameterized queries in one round trip instead of two (prepare + execute).
+	if !strings.Contains(connStr, "binary_parameters=") {
+		if strings.Contains(connStr, "://") {
+			if strings.Contains(connStr, "?") {
+				connStr += "&binary_parameters=yes"
+			} else {
+				connStr += "?binary_parameters=yes"
+			}
+		} else {
+			connStr += " binary_parameters=yes"
+		}
+	}
+
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
 		return nil, fmt.Errorf("opening database connection: %w", err)
