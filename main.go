@@ -48,7 +48,8 @@ func main() {
 		if strings.HasPrefix(c.Request.URL.Path, "/assets/") {
 			c.Header("Cache-Control", "public, max-age=86400")
 		} else if c.Request.URL.Path == "/app.js" || c.Request.URL.Path == "/styles.css" {
-			c.Header("Cache-Control", "public, max-age=300")
+			// Revalidate every load so a deploy never pairs new HTML with stale code.
+			c.Header("Cache-Control", "no-cache")
 		} else {
 			c.Header("Cache-Control", "no-store")
 		}
