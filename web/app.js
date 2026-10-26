@@ -32,7 +32,7 @@ function boot() {
     watermelon: '◎', cherry: '◈', kiwi: '◑', mango: '✺', pineapple: '◇',
     pear: '◌', peach: '⌂', lemon: '✶', blueberry: '◍', coconut: '△'
   };
-  const state = { me: null, game: null, difficulty: 'easy', busy: false, seconds: 300, deadline: 0, timer: null, first: -1, shown: [], pairs: new Set(), hideTimer: null, queue: Promise.resolve(), cardEls: [], openDialog: null, previousFocus: null };
+  const state = { me: null, game: null, difficulty: 'easy', busy: false, seconds: 300, deadline: 0, timer: null, first: -1, shown: [], pairs: new Set(), hideTimer: null, queue: Promise.resolve(), cardEls: [], openDialog: null, dialogStack: [], previousFocus: null };
 
   async function api(path, options = {}) {
     let response;
@@ -350,7 +350,7 @@ function boot() {
       $('completionCopy').textContent = `${next[0].toUpperCase() + next.slice(1)} is now unlocked. Meanwhile, meet this year's confirmed speakers.`;
       $('continueLevel').hidden = false;
       $('continueLevel').dataset.next = next;
-      $('continueLevel').textContent = `Continue to ${next}`;
+      $('continueLevel').textContent = 'Continue to next level';
     } else {
       $('completionCopy').textContent = 'Hard is complete. These are the voices of The Noise Paradox.';
       $('continueLevel').hidden = true;
@@ -469,6 +469,12 @@ function boot() {
   }
 
   function openDialog(backdrop) {
+    if (state.openDialog && state.openDialog !== backdrop) {
+      state.dialogStack.push(state.openDialog);
+      if (state.openDialog.id === 'completionDialog') {
+        pauseSpeakerAutoShift(0);
+      }
+    }
     state.previousFocus = document.activeElement;
     state.openDialog = backdrop;
     backdrop.hidden = false;
@@ -486,9 +492,18 @@ function boot() {
       stopSpeakerAutoShift();
     }
     state.openDialog.hidden = true;
-    state.openDialog = null;
-    document.body.classList.remove('dialog-open');
-    if (state.previousFocus && state.previousFocus.focus) state.previousFocus.focus();
+    if (state.dialogStack && state.dialogStack.length > 0) {
+      state.openDialog = state.dialogStack.pop();
+      if (state.openDialog.id === 'completionDialog') {
+        resumeSpeakerAutoShift();
+      }
+      const focusable = state.openDialog.querySelector('button, a, input');
+      if (focusable) focusable.focus();
+    } else {
+      state.openDialog = null;
+      document.body.classList.remove('dialog-open');
+      if (state.previousFocus && state.previousFocus.focus) state.previousFocus.focus();
+    }
   }
 
   function trapDialogKey(event) {
@@ -555,8 +570,39 @@ function boot() {
   document.querySelectorAll('[data-leader-difficulty]').forEach((button) => button.addEventListener('click', () => loadLeaderboard(button.dataset.leaderDifficulty)));
   document.querySelectorAll('[data-close-dialog]').forEach((button) => button.addEventListener('click', closeDialog));
   document.querySelectorAll('.dialog-backdrop').forEach((backdrop) => backdrop.addEventListener('click', (event) => { if (event.target === backdrop) closeDialog(); }));
+  const themeRevealBtn = $('themeRevealBtn');
+  if (themeRevealBtn) {
+    themeRevealBtn.addEventListener('click', () => {
+      openDialog($('themeDialog'));
+    });
+  }
+  document.querySelectorAll('.secret-ted-button').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      stopTimer();
+      if (state.game) {
+        state.game.status = 'aborted';
+      }
+      $('completionCard').classList.add('is-reveal');
+      $('completionCopy').textContent = 'Voices of The Noise Paradox.';
+      const difficulty = (state.game && state.game.difficulty) || state.difficulty || 'easy';
+      const next = difficulty === 'easy' ? 'medium' : difficulty === 'medium' ? 'hard' : '';
+      if (next) {
+        $('continueLevel').hidden = false;
+        $('continueLevel').dataset.next = next;
+        $('continueLevel').textContent = 'Continue to next level';
+      } else {
+        $('continueLevel').hidden = true;
+        $('continueLevel').dataset.next = '';
+      }
+      const track = $('speakerTrack');
+      if (track) track.scrollTo({ left: 0 });
+      openDialog($('completionDialog'));
+    });
+  });
   $('continueLevel').addEventListener('click', () => {
     const next = $('continueLevel').dataset.next;
+    state.dialogStack = [];
     closeDialog();
     if (next) startGame(next);
   });
