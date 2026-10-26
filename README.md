@@ -26,14 +26,13 @@ Requirements: Go, Node.js 20+ for browser-script tests, and PostgreSQL.
 
 ```sh
 cp .env.example .env
-# Fill in .env, then export it into the shell:
-set -a
-source .env
-set +a
-go run .
+# Fill in DATABASE_URL, then:
+./scripts/run-local.sh          # Git Bash / macOS / Linux
+# or
+powershell -ExecutionPolicy Bypass -File scripts/run-local.ps1
 ```
 
-Open `http://localhost:8082`.
+Open `http://localhost:8082`. The run scripts load `.env` and force `COOKIE_SECURE=false` so login works on local HTTP.
 
 The server applies embedded SQL migrations during startup.
 
@@ -60,7 +59,7 @@ node scripts/load-smoke.js https://your-service.onrender.com
 2. In Render, open the web service → **Environment** and set `DATABASE_URL` to that string. Nothing else is required.
 3. Deploy. The server creates and migrates the tables on startup; `/health` turns green when it is serving.
 
-`render.yaml` describes the same service if you prefer creating it as a Blueprint. Free services sleep after inactivity and take up to a minute to wake — open the site 15 minutes before play.  Event checks, prize export SQL, and rollback steps are in [docs/operations.md](docs/operations.md).
+`render.yaml` describes the same service if you prefer creating it as a Blueprint. Render Free sleeps after about 15 minutes of idle traffic. Keep it awake with `scripts/keep-awake.sh`, the `Keep Render awake` GitHub Action, or a free UptimeRobot monitor on `/health` (see [docs/operations.md](docs/operations.md)).
 
 ## Privacy and prizes
 

@@ -77,7 +77,10 @@ function boot() {
     try {
       state.me = await api('/me');
       showGame();
-      if (!state.game) setMessage('Pick a level, or press New game to begin.');
+      if (!state.game) {
+        state.difficulty = 'easy';
+        await startGame('easy');
+      }
     } catch (error) {
       showEntry(error.status === 401 ? '' : error.message);
     }
@@ -353,7 +356,83 @@ function boot() {
       $('continueLevel').hidden = true;
       $('continueLevel').dataset.next = '';
     }
+    const track = $('speakerTrack');
+    if (track) track.scrollTo({ left: 0 });
     openDialog($('completionDialog'));
+  }
+
+  let speakerAutoShiftTimer = null;
+  let speakerInteractionPause = false;
+  let speakerResumeTimeout = null;
+
+  function pauseSpeakerAutoShift(temporaryMs = 0) {
+    speakerInteractionPause = true;
+    if (speakerResumeTimeout) clearTimeout(speakerResumeTimeout);
+    if (temporaryMs > 0) {
+      speakerResumeTimeout = setTimeout(() => {
+        speakerInteractionPause = false;
+      }, temporaryMs);
+    }
+  }
+
+  function resumeSpeakerAutoShift() {
+    if (speakerResumeTimeout) clearTimeout(speakerResumeTimeout);
+    speakerInteractionPause = false;
+  }
+
+  function startSpeakerAutoShift() {
+    stopSpeakerAutoShift();
+    if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      return;
+    }
+    speakerInteractionPause = false;
+    speakerAutoShiftTimer = setInterval(() => {
+      if (speakerInteractionPause) return;
+      const track = $('speakerTrack');
+      if (!track || track.offsetParent === null) return;
+      const maxScroll = track.scrollWidth - track.clientWidth;
+      if (maxScroll <= 5) return;
+      if (track.scrollLeft >= maxScroll - 15) {
+        track.scrollTo({ left: 0, behavior: 'smooth' });
+      } else {
+        scrollSpeakers(1);
+      }
+    }, 3200);
+  }
+
+  function stopSpeakerAutoShift() {
+    if (speakerAutoShiftTimer) {
+      clearInterval(speakerAutoShiftTimer);
+      speakerAutoShiftTimer = null;
+    }
+    if (speakerResumeTimeout) {
+      clearTimeout(speakerResumeTimeout);
+      speakerResumeTimeout = null;
+    }
+  }
+
+  function resetSpeakerAutoShift() {
+    stopSpeakerAutoShift();
+    startSpeakerAutoShift();
+  }
+
+  function scrollSpeakers(direction) {
+    const track = $('speakerTrack');
+    if (!track) return;
+    const card = track.querySelector('.speaker-card');
+    const gap = 14;
+    const step = (card ? card.getBoundingClientRect().width : 250) + gap;
+    const maxScroll = track.scrollWidth - track.clientWidth;
+
+    if (maxScroll <= 5) return;
+
+    if (direction > 0 && track.scrollLeft >= maxScroll - 15) {
+      track.scrollTo({ left: 0, behavior: 'smooth' });
+    } else if (direction < 0 && track.scrollLeft <= 15) {
+      track.scrollTo({ left: maxScroll, behavior: 'smooth' });
+    } else {
+      track.scrollBy({ left: direction * step, behavior: 'smooth' });
+    }
   }
 
   async function loadLeaderboard(difficulty = 'hard') {
@@ -394,12 +473,18 @@ function boot() {
     state.openDialog = backdrop;
     backdrop.hidden = false;
     document.body.classList.add('dialog-open');
+    if (backdrop.id === 'completionDialog') {
+      startSpeakerAutoShift();
+    }
     const focusable = backdrop.querySelector('button, a, input');
     if (focusable) focusable.focus();
   }
 
   function closeDialog() {
     if (!state.openDialog) return;
+    if (state.openDialog.id === 'completionDialog') {
+      stopSpeakerAutoShift();
+    }
     state.openDialog.hidden = true;
     state.openDialog = null;
     document.body.classList.remove('dialog-open');
@@ -409,6 +494,12 @@ function boot() {
   function trapDialogKey(event) {
     if (!state.openDialog) return;
     if (event.key === 'Escape') return closeDialog();
+    if (state.openDialog.id === 'completionDialog' && (event.key === 'ArrowRight' || event.key === 'ArrowLeft')) {
+      event.preventDefault();
+      scrollSpeakers(event.key === 'ArrowRight' ? 1 : -1);
+      resetSpeakerAutoShift();
+      return;
+    }
     if (event.key !== 'Tab') return;
     const items = [...state.openDialog.querySelectorAll('button:not(:disabled), a[href], input:not(:disabled)')];
     if (!items.length) return;
@@ -436,9 +527,6 @@ function boot() {
     try {
       state.me = await api('/auth/enter', { method: 'POST', body: JSON.stringify({ email, username }) });
       await loadSession();
-      const next = state.me && state.me.progress && state.me.progress.hard ? 'hard' : state.me && state.me.progress && state.me.progress.medium ? 'medium' : 'easy';
-      state.difficulty = next;
-      startGame(next);
     } catch (error) {
       $('entryError').textContent = error.message;
     } finally {
@@ -453,8 +541,15 @@ function boot() {
   window.addEventListener('resize', fitBoard);
   $('board').addEventListener('click', onBoardClick);
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && state.game && state.game.status === 'in_progress') {
-      state.queue = state.queue.then(() => resync().catch(() => {}));
+    if (document.visibilityState === 'visible') {
+      if (state.game && state.game.status === 'in_progress') {
+        state.queue = state.queue.then(() => resync().catch(() => {}));
+      }
+      if (state.openDialog && state.openDialog.id === 'completionDialog') {
+        startSpeakerAutoShift();
+      }
+    } else {
+      stopSpeakerAutoShift();
     }
   });
   document.querySelectorAll('[data-leader-difficulty]').forEach((button) => button.addEventListener('click', () => loadLeaderboard(button.dataset.leaderDifficulty)));
@@ -465,6 +560,32 @@ function boot() {
     closeDialog();
     if (next) startGame(next);
   });
+  document.querySelectorAll('[data-carousel-dir]').forEach((button) => {
+    button.addEventListener('click', () => {
+      scrollSpeakers(Number(button.dataset.carouselDir));
+      resetSpeakerAutoShift();
+    });
+  });
+  const speakerCarousel = document.querySelector('.speaker-carousel');
+  const speakerTrack = $('speakerTrack');
+  if (speakerCarousel) {
+    speakerCarousel.addEventListener('mouseenter', () => pauseSpeakerAutoShift(0));
+    speakerCarousel.addEventListener('mouseleave', () => resumeSpeakerAutoShift());
+    speakerCarousel.addEventListener('focusin', () => pauseSpeakerAutoShift(0));
+    speakerCarousel.addEventListener('focusout', () => resumeSpeakerAutoShift());
+    speakerCarousel.addEventListener('touchstart', () => pauseSpeakerAutoShift(0), { passive: true });
+    speakerCarousel.addEventListener('touchend', () => pauseSpeakerAutoShift(3500), { passive: true });
+  }
+  if (speakerTrack) {
+    speakerTrack.addEventListener('scroll', () => {
+      if (speakerInteractionPause) {
+        pauseSpeakerAutoShift(3500);
+      }
+    }, { passive: true });
+  }
+  if ($('completionDialog') && !$('completionDialog').hidden) {
+    startSpeakerAutoShift();
+  }
   document.addEventListener('keydown', trapDialogKey);
   window.addEventListener('online', () => setMessage('Back online.'));
   window.addEventListener('offline', () => setMessage('You are offline. Your current board is safe on the server.', 'is-error'));

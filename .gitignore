@@ -1,5 +1,6 @@
 .worktrees/
 bin/
+.tools/
 .env
 .DS_Store
 coverage.out

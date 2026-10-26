@@ -8,13 +8,37 @@ This runbook is for the TEDxNITKSurathkal organizer operating the free Render an
 2. Confirm `DATABASE_URL` is set on the Render service.
 3. Open the site, enter a test email and username, and complete a test game.
 4. Check Easy, Medium, and Hard leaderboard tabs on both a phone and a laptop.
-5. Wake the service 15 minutes before play, then run:
+5. Confirm a keep-awake pinger is hitting `/health` at least every 10 minutes (see below), then run:
 
 ```sh
-node scripts/load-smoke.js https://your-service.onrender.com
+node scripts/load-smoke.js https://tedx-nitk-memory-challenge.onrender.com
 ```
 
-A passing check has zero failed requests and public-route p95 below five seconds after warm-up. Render Free may cold-start; the script allows up to 90 seconds for that first wake-up.
+A passing check has zero failed requests and public-route p95 below five seconds after warm-up. Render Free may cold-start if the pinger stopped; the script allows up to 90 seconds for that first wake-up.
+
+## Keep the free Render service awake
+
+Idle Render Free web services spin down after about 15 minutes. The next visitor then waits 30–60 seconds. Ping `https://tedx-nitk-memory-challenge.onrender.com/health` at least every 10 minutes so that does not happen.
+
+**Local loop (keep this running on a machine that stays on):**
+
+```sh
+# Git Bash or WSL on Windows; any bash on macOS/Linux
+chmod +x scripts/keep-awake.sh
+./scripts/keep-awake.sh
+```
+
+Leave that terminal open. It requests `/health` every 600 seconds. Stop with Ctrl+C.
+
+**GitHub Actions:** `.github/workflows/keep-awake.yml` pings the same URL every 10 minutes after it is on `main`. GitHub can delay scheduled jobs, so do not rely on Actions alone during the event.
+
+**UptimeRobot (recommended for the event):** free plan, no credit card, 5-minute HTTPS checks.
+
+1. Open [UptimeRobot Quick Start](https://uptimerobot.com/quick-start?url=https://tedx-nitk-memory-challenge.onrender.com/health) (or [uptimerobot.com](https://uptimerobot.com/) → Add Monitor).
+2. Monitor type: HTTP(s). URL: `https://tedx-nitk-memory-challenge.onrender.com/health`. Interval: 5 minutes.
+3. Use an inbox you check. Activate the monitor from the email UptimeRobot sends.
+
+Keeping the service awake uses the free-instance hours continuously. That is expected for the event window.
 
 ## Required production settings
 
@@ -29,7 +53,7 @@ Never paste secret values into issues, chat, screenshots, or the repository.
 
 - Keep the Render logs and Neon monitoring pages open.
 - If nobody can start a game, check the Render logs and that `DATABASE_URL` is set and the Neon project is active.
-- If the first request is slow, wait for the service to wake and retry; players who return use the same email and username to resume.
+- If the first request is slow, the keep-awake pinger is not running; wait for the service to wake, restart `scripts/keep-awake.sh` or UptimeRobot, then retry. Players who return use the same email and username to resume.
 - If the database is unavailable, pause the contest. Scores are deliberately not accepted offline because they could not be verified.
 - Do not change ranking rules after play begins.
 

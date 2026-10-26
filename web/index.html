@@ -79,7 +79,7 @@
         <div id="boardWrap" class="board-wrap">
           <div id="board" class="board" aria-label="Memory cards"></div>
         </div>
-        <p id="gameMessage" class="game-message" role="status">Choose a level to begin.</p>
+        <p id="gameMessage" class="game-message" role="status">Shuffling the signal…</p>
       </section>
     </section>
   </main>
@@ -126,18 +126,59 @@
     <section id="completionCard" class="dialog completion-dialog is-reveal" role="dialog" aria-modal="true" aria-labelledby="completionTitle">
       <button class="dialog-close" data-close-dialog type="button" aria-label="Close result">×</button>
       <div class="speaker-reveal">
-        <figure class="speaker-poster">
-          <img src="/assets/speaker-reveal.jpg" width="1080" height="1350" alt="TEDxNITKSurathkal confirmed speakers for The Noise Paradox: Smitha Murthy, Ramya Ranganathan, Rohit Agrawal, Anuj Agrawal, Saptarshi Prakash, and Akash Raj">
-        </figure>
         <div class="speaker-copy">
-          <p class="step-label">Level complete · Speakers revealed</p>
-          <h2 id="completionTitle">The Noise<br><em>Paradox.</em></h2>
+          <p class="step-label">Level complete · The Noise Paradox</p>
+          <h2 id="completionTitle">Voices through<br>the <em>noise.</em></h2>
           <p class="theme-subtitle">Confirmed speakers</p>
           <p id="completionCopy">You found the pattern. Here is who takes the stage.</p>
-          <div class="dialog-actions">
-            <button id="continueLevel" class="button button-primary" type="button">Continue</button>
-            <button class="button button-quiet" data-close-dialog type="button">Stay here</button>
+        </div>
+        <div class="speaker-carousel" aria-roledescription="carousel" aria-label="Confirmed speakers for The Noise Paradox">
+          <ul class="carousel-track" id="speakerTrack">
+            <li class="speaker-card">
+              <img src="/assets/speakers/smitha-murthy.jpg" alt="Smitha Murthy" width="240" height="240" loading="lazy">
+              <p class="speaker-role">Co-Founder, MyndStories</p>
+              <h3>Smitha Murthy</h3>
+              <p>Writer and speaker passionate about mental health, storytelling, and creating meaningful human connections.</p>
+            </li>
+            <li class="speaker-card">
+              <img src="/assets/speakers/ramya-ranganathan.jpg" alt="Ramya Ranganathan" width="240" height="240" loading="lazy">
+              <p class="speaker-role">Corporate Trainer &amp; Adjunct Faculty, IIMB</p>
+              <h3>Ramya Ranganathan</h3>
+              <p>Top 15 Innovators in Higher Education. She helps people unlock potential through personal growth and happiness-focused programs.</p>
+            </li>
+            <li class="speaker-card">
+              <img src="/assets/speakers/rohit-agrawal.jpg" alt="Rohit Agrawal" width="240" height="240" loading="lazy">
+              <p class="speaker-role">Senior Faculty, Physics Wallah</p>
+              <h3>Rohit Agrawal</h3>
+              <p>Organic Chemistry educator who taught at Allen, co-founded Nucleus Education, and led Organic Chemistry at Physics Wallah.</p>
+            </li>
+            <li class="speaker-card">
+              <img src="/assets/speakers/anuj-agrawal.jpg" alt="Anuj Agrawal" width="240" height="240" loading="lazy">
+              <p class="speaker-role">Founder &amp; CEO, Zyoin Group &amp; Workplace</p>
+              <h3>Anuj Agrawal</h3>
+              <p>Helps businesses scale through talent solutions, GCC development, strategic partnerships, and startup investments.</p>
+            </li>
+            <li class="speaker-card">
+              <img src="/assets/speakers/saptarshi-prakash.jpg" alt="Saptarshi Prakash" width="240" height="240" loading="lazy">
+              <p class="speaker-role">VP of Design, Swiggy · Content creator</p>
+              <h3>Saptarshi Prakash</h3>
+              <p>Speaker, author, and product design expert exploring design, technology, and AI, with 700k followers as a creator.</p>
+            </li>
+            <li class="speaker-card">
+              <img src="/assets/speakers/akash-raj.jpg" alt="Akash Raj" width="240" height="240" loading="lazy">
+              <p class="speaker-role">AI Product Manager · Content creator</p>
+              <h3>Akash Raj</h3>
+              <p>AI Product Manager at Tiramai AI, founder of Military Mantra and Super Dream Foundation, building products and social change.</p>
+            </li>
+          </ul>
+          <div class="carousel-controls">
+            <button class="carousel-nav" data-carousel-dir="-1" type="button" aria-label="Previous speakers">‹</button>
+            <button class="carousel-nav" data-carousel-dir="1" type="button" aria-label="Next speakers">›</button>
           </div>
+        </div>
+        <div class="dialog-actions">
+          <button id="continueLevel" class="button button-primary" type="button">Continue</button>
+          <button class="button button-quiet" data-close-dialog type="button">Stay here</button>
         </div>
       </div>
     </section>
