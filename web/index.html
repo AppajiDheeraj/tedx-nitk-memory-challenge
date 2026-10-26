@@ -33,7 +33,7 @@
           <p class="eyebrow">A small experiment in attention</p>
           <h1 id="gameTitle">Remember the <em>signal.</em></h1>
         </div>
-        <p>Turn over two cards. Hold the pattern. Find every pair before five minutes disappear. Clear Easy, Medium and Hard to uncover this year's theme.</p>
+        <p>Turn over two cards. Hold the pattern. Find every pair before five minutes disappear. Clear Easy, Medium or Hard to reveal this year's confirmed speakers.</p>
       </div>
 
       <section id="entryPanel" class="game-shell entry-panel" aria-labelledby="entryTitle">
@@ -111,7 +111,7 @@
       <ol class="help-steps">
         <li><strong>Flip two cards.</strong> Tap any two cards to turn them over. If the symbols match, they stay open. If not, they flip back — remember where they were.</li>
         <li><strong>Clear the board in 5:00.</strong> Find every pair before the timer runs out. The clock keeps running even while this window is open.</li>
-        <li><strong>Climb three levels.</strong> Easy (8 pairs) unlocks Medium (10 pairs), which unlocks Hard (15 pairs). Finish Hard to reveal this year's theme.</li>
+        <li><strong>Climb three levels.</strong> Easy (8 pairs) unlocks Medium (10 pairs), which unlocks Hard (15 pairs). Finish any level to reveal this year's confirmed speakers.</li>
         <li><strong>Score.</strong> Every two cards you flip is one move. Fewest moves wins; time breaks ties. Only your best run on each level counts, so replay as often as you like.</li>
         <li><strong>Win.</strong> The top Hard players win prizes — we'll contact them by email. To continue later, enter the same email and username.</li>
       </ol>
@@ -123,25 +123,21 @@
   </div>
 
   <div id="completionDialog" class="dialog-backdrop" hidden>
-    <section id="completionCard" class="dialog completion-dialog" role="dialog" aria-modal="true" aria-labelledby="completionTitle">
+    <section id="completionCard" class="dialog completion-dialog is-reveal" role="dialog" aria-modal="true" aria-labelledby="completionTitle">
       <button class="dialog-close" data-close-dialog type="button" aria-label="Close result">×</button>
-      <div id="standardCompletion">
-        <p class="step-label">Level complete</p>
-        <h2 id="completionTitle">You found the pattern.</h2>
-        <p id="completionCopy"></p>
-        <div class="dialog-actions">
-          <button id="continueLevel" class="button button-primary" type="button">Continue</button>
-          <button class="button button-quiet" data-close-dialog type="button">Stay here</button>
-        </div>
-      </div>
-      <div id="themeReveal" class="theme-reveal" hidden>
-        <img src="/assets/threshold-1600.webp" alt="A lone figure crossing a bright threshold from darkness into light">
-        <div class="theme-copy">
-          <p class="step-label">Signal found · The 2026 theme</p>
-          <h2>The Noise<br><em>Paradox.</em></h2>
-          <p class="theme-subtitle">The Quiet Signal</p>
-          <p>In a world that never stops, what truly matters often whispers.</p>
-          <a class="button button-primary" href="https://www.tedxnitksurathkal.in/" target="_blank" rel="noopener noreferrer">Explore the theme ↗</a>
+      <div class="speaker-reveal">
+        <figure class="speaker-poster">
+          <img src="/assets/speaker-reveal.jpg" width="1080" height="1350" alt="TEDxNITKSurathkal confirmed speakers for The Noise Paradox: Smitha Murthy, Ramya Ranganathan, Rohit Agrawal, Anuj Agrawal, Saptarshi Prakash, and Akash Raj">
+        </figure>
+        <div class="speaker-copy">
+          <p class="step-label">Level complete · Speakers revealed</p>
+          <h2 id="completionTitle">The Noise<br><em>Paradox.</em></h2>
+          <p class="theme-subtitle">Confirmed speakers</p>
+          <p id="completionCopy">You found the pattern. Here is who takes the stage.</p>
+          <div class="dialog-actions">
+            <button id="continueLevel" class="button button-primary" type="button">Continue</button>
+            <button class="button button-quiet" data-close-dialog type="button">Stay here</button>
+          </div>
         </div>
       </div>
     </section>

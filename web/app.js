@@ -341,15 +341,17 @@ function boot() {
     try { state.me = await api('/me'); } catch (_) { /* completion still renders */ }
     updateDifficultyButtons();
     const difficulty = state.game.difficulty;
-    const finalReveal = difficulty === 'hard';
-    $('standardCompletion').hidden = finalReveal;
-    $('themeReveal').hidden = !finalReveal;
-    $('completionCard').classList.toggle('is-theme', finalReveal);
-    if (!finalReveal) {
-      const next = difficulty === 'easy' ? 'medium' : 'hard';
-      $('completionCopy').textContent = `${next[0].toUpperCase() + next.slice(1)} is now unlocked. The signal gets quieter from here.`;
+    const next = difficulty === 'easy' ? 'medium' : difficulty === 'medium' ? 'hard' : '';
+    $('completionCard').classList.add('is-reveal');
+    if (next) {
+      $('completionCopy').textContent = `${next[0].toUpperCase() + next.slice(1)} is now unlocked. Meanwhile, meet this year's confirmed speakers.`;
+      $('continueLevel').hidden = false;
       $('continueLevel').dataset.next = next;
       $('continueLevel').textContent = `Continue to ${next}`;
+    } else {
+      $('completionCopy').textContent = 'Hard is complete. These are the voices of The Noise Paradox.';
+      $('continueLevel').hidden = true;
+      $('continueLevel').dataset.next = '';
     }
     openDialog($('completionDialog'));
   }
@@ -458,7 +460,11 @@ function boot() {
   document.querySelectorAll('[data-leader-difficulty]').forEach((button) => button.addEventListener('click', () => loadLeaderboard(button.dataset.leaderDifficulty)));
   document.querySelectorAll('[data-close-dialog]').forEach((button) => button.addEventListener('click', closeDialog));
   document.querySelectorAll('.dialog-backdrop').forEach((backdrop) => backdrop.addEventListener('click', (event) => { if (event.target === backdrop) closeDialog(); }));
-  $('continueLevel').addEventListener('click', () => { const next = $('continueLevel').dataset.next; closeDialog(); startGame(next); });
+  $('continueLevel').addEventListener('click', () => {
+    const next = $('continueLevel').dataset.next;
+    closeDialog();
+    if (next) startGame(next);
+  });
   document.addEventListener('keydown', trapDialogKey);
   window.addEventListener('online', () => setMessage('Back online.'));
   window.addEventListener('offline', () => setMessage('You are offline. Your current board is safe on the server.', 'is-error'));
