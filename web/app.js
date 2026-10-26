@@ -470,9 +470,17 @@ function boot() {
 
   function openDialog(backdrop) {
     if (state.openDialog && state.openDialog !== backdrop) {
-      state.dialogStack.push(state.openDialog);
-      if (state.openDialog.id === 'completionDialog') {
-        pauseSpeakerAutoShift(0);
+      if (backdrop.id === 'themeDialog' || backdrop.id === 'speakerDetailDialog') {
+        state.dialogStack.push(state.openDialog);
+        if (state.openDialog.id === 'completionDialog') {
+          pauseSpeakerAutoShift(0);
+        }
+      } else {
+        if (state.openDialog.id === 'completionDialog') {
+          stopSpeakerAutoShift();
+        }
+        state.openDialog.hidden = true;
+        state.dialogStack = [];
       }
     }
     state.previousFocus = document.activeElement;
@@ -576,6 +584,35 @@ function boot() {
       openDialog($('themeDialog'));
     });
   }
+  function showSpeakerDetail(card) {
+    const img = card.querySelector('img');
+    const role = card.querySelector('.speaker-role');
+    const name = card.querySelector('h3');
+    const desc = card.dataset.fullBio || card.querySelector('p:not(.speaker-role)').textContent;
+
+    const detailImg = $('speakerDetailImg');
+    if (detailImg && img) {
+      detailImg.src = img.src;
+      detailImg.alt = img.alt;
+    }
+    const detailRole = $('speakerDetailRole');
+    if (detailRole && role) detailRole.textContent = role.textContent;
+    const detailName = $('speakerDetailName');
+    if (detailName && name) detailName.textContent = name.textContent;
+    const detailDesc = $('speakerDetailDesc');
+    if (detailDesc) detailDesc.textContent = desc;
+
+    openDialog($('speakerDetailDialog'));
+  }
+  document.querySelectorAll('[data-speaker-card]').forEach((card) => {
+    card.addEventListener('click', () => showSpeakerDetail(card));
+    card.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        showSpeakerDetail(card);
+      }
+    });
+  });
   document.querySelectorAll('.secret-ted-button').forEach((button) => {
     button.addEventListener('click', (event) => {
       event.preventDefault();

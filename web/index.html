@@ -134,41 +134,41 @@
         </div>
         <div class="speaker-carousel" aria-roledescription="carousel" aria-label="Confirmed speakers for The Noise Paradox">
           <ul class="carousel-track" id="speakerTrack">
-            <li class="speaker-card">
+            <li class="speaker-card" tabindex="0" role="button" aria-haspopup="dialog" aria-label="View Smitha Murthy details" data-speaker-card data-full-bio="Smitha, co-founder of MyndStories, is a writer and speaker passionate about mental health, storytelling, and creating meaningful human connections.">
               <img src="/assets/speakers/smitha-murthy.jpg" alt="Smitha Murthy" width="240" height="240" loading="lazy">
               <p class="speaker-role">Co-Founder, MyndStories</p>
               <h3>Smitha Murthy</h3>
-              <p>Writer and speaker passionate about mental health, storytelling, and creating meaningful human connections.</p>
+              <p>Smitha, co-founder of MyndStories, is a writer and speaker passionate about mental health, storytelling, and creating meaningful human connections.</p>
             </li>
-            <li class="speaker-card">
+            <li class="speaker-card" tabindex="0" role="button" aria-haspopup="dialog" aria-label="View Ramya Ranganathan details" data-speaker-card data-full-bio="Top 15 Innovators in Higher Education recognized by the Ministry of Education. She helps individuals unlock their potential through personal growth and happiness-focused programs.">
               <img src="/assets/speakers/ramya-ranganathan.jpg?v=2" alt="Ramya Ranganathan" width="240" height="240" loading="lazy">
               <p class="speaker-role">Corporate Trainer &amp; Adjunct Faculty, IIMB</p>
               <h3>Ramya Ranganathan</h3>
-              <p>Top 15 Innovators in Higher Education. She helps people unlock potential through personal growth and happiness-focused programs.</p>
+              <p>Top 15 Innovators in Higher Education recognized by the Ministry of Education. She helps individuals unlock their potential through personal growth and happiness-focused programs.</p>
             </li>
-            <li class="speaker-card">
+            <li class="speaker-card" tabindex="0" role="button" aria-haspopup="dialog" aria-label="View Rohit Agrawal details" data-speaker-card data-full-bio="A renowned Organic Chemistry educator, he taught at Allen, co-founded Nucleus Education, and led Organic Chemistry at Physics Wallah.">
               <img src="/assets/speakers/rohit-agrawal.jpg" alt="Rohit Agrawal" width="240" height="240" loading="lazy">
               <p class="speaker-role">Senior Faculty, Physics Wallah</p>
               <h3>Rohit Agrawal</h3>
-              <p>Organic Chemistry educator who taught at Allen, co-founded Nucleus Education, and led Organic Chemistry at Physics Wallah.</p>
+              <p>A renowned Organic Chemistry educator, he taught at Allen, co-founded Nucleus Education, and led Organic Chemistry at Physics Wallah.</p>
             </li>
-            <li class="speaker-card">
+            <li class="speaker-card" tabindex="0" role="button" aria-haspopup="dialog" aria-label="View Anuj Agrawal details" data-speaker-card data-full-bio="Founder &amp; CEO of Zyoin Group &amp; Workplace. He helps businesses scale through talent solutions, GCC development, strategic partnerships, and startup investments.">
               <img src="/assets/speakers/anuj-agrawal.jpg" alt="Anuj Agrawal" width="240" height="240" loading="lazy">
               <p class="speaker-role">Founder &amp; CEO, Zyoin Group &amp; Workplace</p>
               <h3>Anuj Agrawal</h3>
-              <p>Helps businesses scale through talent solutions, GCC development, strategic partnerships, and startup investments.</p>
+              <p>Founder &amp; CEO of Zyoin Group &amp; Workplace. He helps businesses scale through talent solutions, GCC development, strategic partnerships, and startup investments.</p>
             </li>
-            <li class="speaker-card">
+            <li class="speaker-card" tabindex="0" role="button" aria-haspopup="dialog" aria-label="View Saptarshi Prakash details" data-speaker-card data-full-bio="He leads design at Swiggy and is a speaker, author, and product design expert exploring the intersection of design, technology, and AI, with 700k followers as a content creator.">
               <img src="/assets/speakers/saptarshi-prakash.jpg" alt="Saptarshi Prakash" width="240" height="240" loading="lazy">
               <p class="speaker-role">VP of Design, Swiggy · Content creator</p>
               <h3>Saptarshi Prakash</h3>
-              <p>Speaker, author, and product design expert exploring design, technology, and AI, with 700k followers as a creator.</p>
+              <p>He leads design at Swiggy and is a speaker, author, and product design expert exploring the intersection of design, technology, and AI, with 700k followers as a content creator.</p>
             </li>
-            <li class="speaker-card">
+            <li class="speaker-card" tabindex="0" role="button" aria-haspopup="dialog" aria-label="View Akash Raj details" data-speaker-card data-full-bio="AI Product Manager at Tiramai AI, founder of Military Mantra and Super Dream Foundation, building impactful products, communities, and social change.">
               <img src="/assets/speakers/akash-raj.jpg" alt="Akash Raj" width="240" height="240" loading="lazy">
               <p class="speaker-role">AI Product Manager · Content creator</p>
               <h3>Akash Raj</h3>
-              <p>AI Product Manager at Tiramai AI, founder of Military Mantra and Super Dream Foundation, building products and social change.</p>
+              <p>AI Product Manager at Tiramai AI, founder of Military Mantra and Super Dream Foundation, building impactful products, communities, and social change.</p>
             </li>
           </ul>
           <div class="carousel-controls">
@@ -191,6 +191,24 @@
       <button class="dialog-close theme-dialog-close" data-close-dialog type="button" aria-label="Close theme reveal">×</button>
       <div class="theme-poster-wrap">
         <img src="/assets/TEDx%20NITK%20Surathkal_%20The%20Noise%20Paradox.png" alt="TEDxNITKSurathkal — The Noise Paradox Theme Reveal Poster" class="theme-poster-img" width="1024" height="1536">
+      </div>
+    </section>
+  </div>
+
+  <div id="speakerDetailDialog" class="dialog-backdrop speaker-detail-backdrop" hidden>
+    <section class="dialog speaker-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="speakerDetailName">
+      <button class="dialog-close speaker-detail-close" data-close-dialog type="button" aria-label="Close speaker details">×</button>
+      <div class="speaker-detail-card" id="speakerDetailContent">
+        <div class="speaker-detail-image-wrap">
+          <img id="speakerDetailImg" src="" alt="" width="260" height="260">
+        </div>
+        <div class="speaker-detail-info">
+          <p class="speaker-role" id="speakerDetailRole"></p>
+          <h3 id="speakerDetailName"></h3>
+          <div class="speaker-detail-desc-wrap">
+            <p id="speakerDetailDesc" class="speaker-detail-desc"></p>
+          </div>
+        </div>
       </div>
     </section>
   </div>
